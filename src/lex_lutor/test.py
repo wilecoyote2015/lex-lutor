@@ -1,4 +1,6 @@
 import sys
+import os
+os.putenv('QT3D_RENDERER', 'rhi')
 from PySide6 import QtWidgets, QtCore, QtGui
 from PySide6.Qt3DCore import Qt3DCore
 from PySide6.Qt3DExtras import Qt3DExtras
