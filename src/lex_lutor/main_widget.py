@@ -19,6 +19,7 @@ class MainWidget(QtWidgets.QWidget):
 
 
         self.window_3d: CubeView = CubeView()
+        self.window_3d_widget = self.window_3d.widget
         # widget_3d = QtWidgets.QWidget.createWindowContainer(window_3d)
 
         # window_3d.createScene()
@@ -32,7 +33,10 @@ class MainWidget(QtWidgets.QWidget):
         widget_menu = MenuWidget()
 
         layout = QHBoxLayout(self)
-        layout.addWidget(self.window_3d.widget, 1)
+        layout.addWidget(self.window_3d_widget, 1)
         layout.addWidget(widget_menu)
 
         # self.setLayout(layout)
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        self.window_3d.keyPressEvent(event)

@@ -11,8 +11,14 @@ from PySide6.Qt3DRender import Qt3DRender
 # from PySide6 import Qt3DCore, Qt3DExtras, Qt3DInput, Qt3DRender
 import sys
 
+FNS_TRAFO = {
+    QtCore.Qt.Key_R: lambda node, distance: node.coordinates_current + QVector3D(distance, 0, 0),
+    QtCore.Qt.Key_G: lambda node, distance: node.coordinates_current + QVector3D(0, distance, 0),
+    QtCore.Qt.Key_B: lambda node, distance: node.coordinates_current + QVector3D(0, 0, distance),
+}
+
 class NodeLut(Qt3DCore.QEntity):
-    def __init__(self, indices_lut: tuple, coordinates: tuple, color_source: tuple, radius: int, parent=None):
+    def __init__(self, indices_lut: tuple, coordinates: QVector3D, color_source: QtGui.QColor, radius: int, parent=None):
         super(NodeLut, self).__init__(parent)
         self.indices_lut = indices_lut
         # TODO: handle display color space here.
@@ -20,24 +26,19 @@ class NodeLut(Qt3DCore.QEntity):
 
         # TODO: slots for transformation. Set if trafo finished
 
+        # TODO: coordinates etc. should be qvector.
+
         # Those coordinates are kept during ongoing transformation until transformation is finished
         self.coordinates_current = coordinates
 
-        self.transform = Qt3DCore.QTransform(
-                            translation=QtGui.QVector3D(
-                                *coordinates
-                            )
-                        )
-        self.color_source = QtGui.QColor(
-                                *color_source,
-                                255
-                            )
+        self.transform = Qt3DCore.QTransform(translation=coordinates)
+        self.color_source = color_source
 
         # TODO: must be changed in slot on movement!
         self.color_target = QtGui.QColor(
-                                coordinates[0]*255,
-                                coordinates[1]*255,
-                                coordinates[2]*255,
+                                coordinates.x()*255,
+                                coordinates.y()*255,
+                                coordinates.z()*255,
                                 255
                             )
 
@@ -66,6 +67,35 @@ class NodeLut(Qt3DCore.QEntity):
         self.picker = Qt3DRender.QObjectPicker(self.parentEntity())
         self.addComponent(self.picker)
         # self.picker.clicked.connect(self.parentEntity().slot_clicked)
+
+    @QtCore.Slot(int, float, float)
+    def transform_dragging(self, mode, distance, weight):
+        # TODO: always clip to domain
+        print('trafo')
+        distance_weighted = distance*weight
+        coords_new = FNS_TRAFO[mode](self, distance_weighted)
+
+        # TODO: clip to borders
+        # TODO: Clipping must be reflected in the trafo fn, as it must handle color space correctly (
+        #  e.g. pertain hue on clipping)
+
+        self.transform.setTranslation(coords_new)
+        # TODO: during dragging, this function calculates the new position based on the mode
+        #   (which is mapped to a color transform function (e.g. Hue) of the current color space)
+        #   and applies it to the transform.
+        #   new position is calculated using distance, relative to coordinates_current.
+        #   mode is a qt.key in code
+
+
+    @QtCore.Slot()
+    def transform_accept(self):
+        # TODO: Transformation is ended: set coordinates_current to new transform coordinates
+        self.coordinates_current = self.transform.translation()
+
+    @QtCore.Slot()
+    def transform_cancel(self):
+        # TODO: Transformation is ended: reset transform to coordinates_current
+        self.transform.setTranslation(self.coordinates_current)
 
 
     @QtCore.Slot(bool)

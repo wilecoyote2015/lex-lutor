@@ -54,15 +54,16 @@ class Lut3dEntity(Qt3DCore.QComponent):
                 for idx_b, value_b_source in enumerate(values_b_source):
                     entity_node = NodeLut(
                         (idx_r, idx_g, idx_b),
-                        (
+                        QVector3D(
                             lut.table[idx_r, idx_g, idx_b, 0],
                             lut.table[idx_r, idx_g, idx_b, 1],
                             lut.table[idx_r, idx_g, idx_b, 2],
                         ),
-                        (
+                        QtGui.QColor(
                             value_r_source * color_max,
                             value_g_source * color_max,
                             value_b_source * color_max,
+                            255
                         ),
                         radius,
                         self
@@ -73,6 +74,15 @@ class Lut3dEntity(Qt3DCore.QComponent):
             nodes_lut.append(nodes_r)
         self.nodes_lut = nodes_lut
 
+    @QtCore.Slot(int, float)
+    def transform_dragging(self, mode, distance):
+        def fn(node: NodeLut):
+            # TODO: calc weight based on selection center or something
+            if node.is_selected:
+                node.transform_dragging(mode, distance, 1.)
+        # fn = node.
+        self.iter_nodes(fn)
+
     @QtCore.Slot()
     def slot_clicked(self, event):
         entity: NodeLut = event.entity()
@@ -82,7 +92,26 @@ class Lut3dEntity(Qt3DCore.QComponent):
             if modifiers == Qt3DRender.QPickEvent.ShiftModifier:
                 entity.select(not entity.is_selected)
             else:
-                for nodes_r in self.nodes_lut:
-                    for nodes_g in nodes_r:
-                        for node in nodes_g:
-                            node.select(not node.is_selected and node is entity)
+                fn = lambda node: node.select(not node.is_selected and node is entity)
+                self.iter_nodes(fn)
+                # for nodes_r in self.nodes_lut:
+                #     for nodes_g in nodes_r:
+                #         for node in nodes_g:
+                #             node.select(not node.is_selected and node is entity)
+
+    @QtCore.Slot()
+    def transform_accept(self):
+        # TODO: Transformation is ended: set coordinates_current to new transform coordinates
+        self.iter_nodes(lambda node: node.transform_accept())
+
+    @QtCore.Slot()
+    def transform_cancel(self):
+        # TODO: Transformation is ended: reset transform to coordinates_current
+        self.iter_nodes(lambda node: node.transform_cancel())
+
+
+    def iter_nodes(self, fn, *args, **kwargs):
+        for nodes_r in self.nodes_lut:
+            for nodes_g in nodes_r:
+                for node in nodes_g:
+                    fn(node, *args, **kwargs)

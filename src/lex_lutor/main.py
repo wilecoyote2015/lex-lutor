@@ -22,6 +22,7 @@ from lex_lutor.main_widget import MainWidget
 #   maybe let the LUT entity have a signal (make the 3d lut node collection a qobject...) that indicates change.
 
 
+# TODO: undo / redo!
 
 
 
@@ -32,7 +33,7 @@ if __name__ == '__main__':
 
     w = MainWidget()
 
-    lut = colour.LUT3D(colour.LUT3D.linear_table(16) ** (1 / 2.2))
+    lut = colour.LUT3D(colour.LUT3D.linear_table(9) ** (1 / 2.2))
     w.window_3d.load_lut(lut)
 
 

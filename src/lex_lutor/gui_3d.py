@@ -5,12 +5,14 @@ from PySide6.QtCore import (Property, QObject, QPropertyAnimation, Signal)
 from PySide6.QtWidgets import QWidget, QPushButton, QGraphicsWidget, QHBoxLayout, QVBoxLayout, QApplication
 from PySide6.Qt3DCore import Qt3DCore
 from PySide6.Qt3DExtras import Qt3DExtras
-from PySide6.QtGui import (QGuiApplication, QMatrix4x4, QQuaternion, QVector3D)
+from PySide6.QtGui import (QGuiApplication, QMatrix4x4, QQuaternion, QVector3D, QCursor)
 from PySide6.Qt3DInput import Qt3DInput
 from PySide6.Qt3DRender import Qt3DRender
 # from PySide6 import Qt3DCore, Qt3DExtras, Qt3DInput, Qt3DRender
 import sys
 from lex_lutor.entity_lut import Lut3dEntity
+
+
 
 class OrbitTransformController(QObject):
     def __init__(self, parent):
@@ -68,9 +70,50 @@ class CubeView(Qt3DExtras.Qt3DWindow):
 
         self.entity_lut: Lut3dEntity = None
 
+        self.modes_transform = (
+            QtCore.Qt.Key_R,
+            QtCore.Qt.Key_G,
+            QtCore.Qt.Key_B,
+        )
+        self.mode_transform_current = None
+        self.coordinates_mouse_event_start = QtCore.QPoint(0, 0)
+
     def load_lut(self, lut: colour.LUT3D):
         self.entity_lut = Lut3dEntity(lut)
         self.root_entity.addComponent(self.entity_lut)
+    #
+    # def mousePressEvent(self, event: Qt3DInput.QMouseEvent) -> None:
+    #     print(event.button())
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        # TODO: Better move all this to entity_lut to reduce complexity
+        key = event.key()
+
+        if key == QtCore.Qt.Key_Escape:
+            self.mode_transform_current = None
+            self.entity_lut.transform_cancel()
+        if key == QtCore.Qt.Key_Enter:
+            self.mode_transform_current = None
+            self.entity_lut.transform_accept()
+        elif key in self.modes_transform:
+            self.mode_transform_current = key
+            self.coordinates_mouse_event_start = QCursor.pos()
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        if self.mode_transform_current is not None:
+            if event.button() == QtGui.Qt.MouseButton.LeftButton:
+                self.mode_transform_current = None
+                self.entity_lut.transform_accept()
+            elif event.button() == QtGui.Qt.MouseButton.RightButton:
+                self.mode_transform_current = None
+                self.entity_lut.transform_cancel()
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
+        # TODO: trigger transform slot of all selected nodes (and later those that are in smooth transform radius)
+        if self.mode_transform_current is not None:
+            screen_size = self.screen().size()
+            distance = (self.coordinates_mouse_event_start.x() - event.x()) / screen_size.width() * 2
+            self.entity_lut.transform_dragging(self.mode_transform_current, distance)
+
 
 
     @property
@@ -98,8 +141,39 @@ class CubeView(Qt3DExtras.Qt3DWindow):
 
         # For camera controls
         self.camController = Qt3DExtras.QOrbitCameraController(self.root_entity)
-        self.camController.setLinearSpeed(50)
+        self.camController.setLinearSpeed(0)
         self.camController.setLookSpeed(180)
         self.camController.setCamera(self.camera())
 
 
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+
+    w = CubeView()
+
+    lut = colour.LUT3D(colour.LUT3D.linear_table(9) ** (1 / 2.2))
+    # w.load_lut(lut)
+
+
+    # w.show()
+    # w.resize(1200, 800)
+    #
+    # widget_3d = QtWidgets.QWidget.createWindowContainer(CubeView())
+    # widget_3d.setFocusPolicy(QtCore.Qt.TabFocus)
+    # widget_3d.show()
+    # view = CubeView()
+    # widget = view.widget
+
+    # w = QtWidgets.QWidget()
+    # layout = QHBoxLayout(w)
+    # layout.addWidget(view.widget, 1)
+
+    w.show()
+
+
+
+
+
+    # view.resize(1200, 800)
+    sys.exit(app.exec())
