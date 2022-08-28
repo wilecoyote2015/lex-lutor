@@ -12,6 +12,8 @@ from PySide6.Qt3DRender import Qt3DRender
 import sys
 from lex_lutor.node_lut import NodeLut
 
+
+
 class Lut3dEntity(Qt3DCore.QComponent):
     def __init__(self, lut):
         super().__init__()
@@ -19,8 +21,11 @@ class Lut3dEntity(Qt3DCore.QComponent):
         self.mesh_node = None
         self.picker = Qt3DRender.QObjectPicker(self)
         self.nodes_lut = None
+        self.color_space: colour.models.RGB_Colourspace = None
 
         self.load_lut(lut)
+
+
 
         # self.root_entity = None
 
@@ -31,6 +36,12 @@ class Lut3dEntity(Qt3DCore.QComponent):
         values_b_source = np.linspace(lut.domain[0,2], lut.domain[1,2], lut.size)
 
         return values_r_source, values_g_source, values_b_source
+
+
+
+    # def load_lut_file(self, filepath):
+    #     lut =
+
 
     def load_lut(self, lut: colour.LUT3D):
         self.lut = lut

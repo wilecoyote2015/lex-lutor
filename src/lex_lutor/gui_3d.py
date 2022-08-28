@@ -11,6 +11,7 @@ from PySide6.Qt3DRender import Qt3DRender
 # from PySide6 import Qt3DCore, Qt3DExtras, Qt3DInput, Qt3DRender
 import sys
 from lex_lutor.entity_lut import Lut3dEntity
+from lex_lutor.constants import color_spaces_components_transform
 
 
 
@@ -95,7 +96,7 @@ class CubeView(Qt3DExtras.Qt3DWindow):
         if key == QtCore.Qt.Key_Enter:
             self.mode_transform_current = None
             self.entity_lut.transform_accept()
-        elif key in self.modes_transform:
+        elif key in color_spaces_components_transform:
             self.mode_transform_current = key
             self.coordinates_mouse_event_start = QCursor.pos()
 
@@ -135,9 +136,6 @@ class CubeView(Qt3DExtras.Qt3DWindow):
         self.camera().lens().setPerspectiveProjection(90, 16 / 9, 0.1, 1000)
         self.camera().setPosition(QVector3D(1.2, 1.2, 1.2))
         self.camera().setViewCenter(QVector3D(0.5, 0.5, 0.5))
-
-        self.nodes_lut = dict()
-        self.lut = None
 
         # For camera controls
         self.camController = Qt3DExtras.QOrbitCameraController(self.root_entity)

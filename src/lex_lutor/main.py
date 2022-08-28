@@ -35,6 +35,7 @@ if __name__ == '__main__':
 
     lut = colour.LUT3D(colour.LUT3D.linear_table(9) ** (1 / 2.2))
     w.window_3d.load_lut(lut)
+    w.window_3d.entity_lut.color_space = colour.models.RGB_COLOURSPACE_ADOBE_RGB1998
 
 
     # w.show()
