@@ -73,7 +73,7 @@ class NodeLut(Qt3DCore.QEntity):
 
     @QtCore.Slot(QVector3D)
     def send_signal_position_changed(self, coordinates):
-        print('Emit')
+        # print('Emit')
         self.position_changed.emit(self.indices_lut, coordinates)
 
     @QtCore.Slot(int, float, float)
@@ -148,12 +148,12 @@ class NodeLut(Qt3DCore.QEntity):
         return QVector3D(*result.tolist())
 
     @QtCore.Slot()
-    def transform_accept(self):
+    def accept_transform(self):
         # TODO: Transformation is ended: set coordinates_current to new transform coordinates
         self.coordinates_current = self.transform.translation()
 
     @QtCore.Slot()
-    def transform_cancel(self):
+    def cancel_transform(self):
         # TODO: Transformation is ended: reset transform to coordinates_current
         self.transform.setTranslation(self.coordinates_current)
 

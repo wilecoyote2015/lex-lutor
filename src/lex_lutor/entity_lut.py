@@ -25,13 +25,18 @@ from datetime import datetime, timedelta
 # TODO: For table upscaling, see https://colour.readthedocs.io/en/develop/generated/colour.algebra.table_interpolation_trilinear.html#colour.algebra.table_interpolation_trilinear
 #   Should be easy
 
+# TODO: Chrominance should be bounded at zero (also saturation etc.) to prevent negative values and hence
+#   color inversion!
+#   best to introduce general bounds for trafo functions
+
 
 class Lut3dEntity(Qt3DCore.QComponent):
-    lut_changed = QtCore.Signal(Qt3DCore.QComponent)
+    lut_changed = QtCore.Signal(colour.LUT3D)
 
-    def __init__(self, lut):
+    def __init__(self, lut, parent_gui):
         super().__init__()
         self.lut = None
+        self.parent_gui = parent_gui
         self.mesh_node = None
         self.picker = Qt3DRender.QObjectPicker(self)
         self.nodes_lut = None
@@ -39,8 +44,8 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
         self.load_lut(lut)
 
-        self.time_last_change = datetime.now()
-        self.timedelta_update = timedelta(milliseconds=100)
+        # self.time_last_change = datetime.now()
+        # self.timedelta_update = timedelta(milliseconds=100)
 
         # TODO: find a better way to block lut calc....
         #   use qtimer as long as dragging, so that update is performed on regular intervals?
@@ -101,6 +106,8 @@ class Lut3dEntity(Qt3DCore.QComponent):
                     )
                     entity_node.picker.clicked.connect(self.slot_clicked)
                     entity_node.position_changed.connect(self.update_lut_node_changed)
+                    self.parent_gui.cancel_transform.connect(entity_node.cancel_transform)
+                    self.parent_gui.accept_transform.connect(entity_node.accept_transform)
                     nodes_g.append(entity_node)
                 nodes_r.append(nodes_g)
             nodes_lut.append(nodes_r)
@@ -117,14 +124,15 @@ class Lut3dEntity(Qt3DCore.QComponent):
         # fn = node.
         self.iter_nodes(fn)
 
-        if datetime.now() - self.time_last_change > self.timedelta_update:
-            self.lut_changed.emit(self)
-            self.time_last_change = datetime.now()
+        self.lut_changed.emit(self.lut)
+
+        # if datetime.now() - self.time_last_change > self.timedelta_update:
+        #     self.time_last_change = datetime.now()
 
     @QtCore.Slot(tuple, QVector3D)
     def update_lut_node_changed(self, indices_node, coordinates_node):
         self.lut.table[indices_node] = np.asarray(coordinates_node.toTuple())
-        print(self.lut.table[indices_node])
+        # print(self.lut.table[indices_node])
 
     @QtCore.Slot()
     def slot_clicked(self, event):
@@ -141,21 +149,6 @@ class Lut3dEntity(Qt3DCore.QComponent):
                 #     for nodes_g in nodes_r:
                 #         for node in nodes_g:
                 #             node.select(not node.is_selected and node is entity)
-
-    # TODO: accept and cancel must be invoked by proper signals that are emitted here!
-    #   Then, one also doesn't need to iter nodes, but transform and cancel is simply
-    @QtCore.Slot()
-    def transform_accept(self):
-        # TODO: Transformation is ended: set coordinates_current to new transform coordinates
-        self.iter_nodes(lambda node: node.transform_accept())
-
-    @QtCore.Slot()
-    def transform_cancel(self):
-        # TODO: Transformation is ended: reset transform to coordinates_current
-        self.iter_nodes(lambda node: node.transform_cancel())
-
-        # TODO: reset lut table value!
-
 
     def iter_nodes(self, fn, *args, **kwargs):
         for nodes_r in self.nodes_lut:

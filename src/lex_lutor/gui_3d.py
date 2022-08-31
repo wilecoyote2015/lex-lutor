@@ -16,6 +16,7 @@ from lex_lutor.constants import color_spaces_components_transform
 
 
 class OrbitTransformController(QObject):
+
     def __init__(self, parent):
         super().__init__(parent)
         self._target = None
@@ -60,6 +61,9 @@ class OrbitTransformController(QObject):
     radius = Property(float, getRadius, setRadius, notify=radiusChanged)
 
 class CubeView(Qt3DExtras.Qt3DWindow):
+    cancel_transform = QtCore.Signal()
+    accept_transform = QtCore.Signal()
+
     def __init__(self, gui_parent):
         super().__init__()
 
@@ -81,11 +85,11 @@ class CubeView(Qt3DExtras.Qt3DWindow):
         self.coordinates_mouse_event_start = QtCore.QPoint(0, 0)
 
     def load_lut(self, lut: colour.LUT3D):
-        self.entity_lut = Lut3dEntity(lut)
+        self.entity_lut = Lut3dEntity(lut, self)
         # TODO: remove old lut
         self.root_entity.addComponent(self.entity_lut)
 
-        self.entity_lut.lut_changed.connect(self.gui_parent.widget_menu.update_image)
+        self.entity_lut.lut_changed.connect(self.gui_parent.widget_menu.start_update_image)
 
     #
     # def mousePressEvent(self, event: Qt3DInput.QMouseEvent) -> None:
@@ -98,11 +102,12 @@ class CubeView(Qt3DExtras.Qt3DWindow):
 
         if key == QtCore.Qt.Key_Escape:
             self.mode_transform_current = None
-            self.entity_lut.transform_cancel()
+            self.cancel_transform.emit()
         if key == QtCore.Qt.Key_Enter:
             self.mode_transform_current = None
-            self.entity_lut.transform_accept()
+            self.accept_transform.emit()
         elif key in color_spaces_components_transform:
+            # TODO: Better send signals to start and stop transform?
             self.mode_transform_current = key
             self.coordinates_mouse_event_start = QCursor.pos()
 
@@ -110,10 +115,10 @@ class CubeView(Qt3DExtras.Qt3DWindow):
         if self.mode_transform_current is not None:
             if event.button() == QtGui.Qt.MouseButton.LeftButton:
                 self.mode_transform_current = None
-                self.entity_lut.transform_accept()
+                self.accept_transform.emit()
             elif event.button() == QtGui.Qt.MouseButton.RightButton:
                 self.mode_transform_current = None
-                self.entity_lut.transform_cancel()
+                self.cancel_transform.emit()
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
         # TODO: trigger transform slot of all selected nodes (and later those that are in smooth transform radius)
         if self.mode_transform_current is not None:
