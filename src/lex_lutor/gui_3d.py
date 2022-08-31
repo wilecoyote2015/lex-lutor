@@ -60,10 +60,11 @@ class OrbitTransformController(QObject):
     radius = Property(float, getRadius, setRadius, notify=radiusChanged)
 
 class CubeView(Qt3DExtras.Qt3DWindow):
-    def __init__(self):
+    def __init__(self, gui_parent):
         super().__init__()
 
         # self.camera()
+        self.gui_parent = gui_parent
 
         self.root_entity: Qt3DCore.QEntity = None
         self.createScene()
@@ -81,12 +82,17 @@ class CubeView(Qt3DExtras.Qt3DWindow):
 
     def load_lut(self, lut: colour.LUT3D):
         self.entity_lut = Lut3dEntity(lut)
+        # TODO: remove old lut
         self.root_entity.addComponent(self.entity_lut)
+
+        self.entity_lut.lut_changed.connect(self.gui_parent.widget_menu.update_image)
+
     #
     # def mousePressEvent(self, event: Qt3DInput.QMouseEvent) -> None:
     #     print(event.button())
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        # TODO: cancel etc. must be invoked by proper signals that are emitted here.
         # TODO: Better move all this to entity_lut to reduce complexity
         key = event.key()
 

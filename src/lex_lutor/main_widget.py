@@ -18,7 +18,7 @@ class MainWidget(QtWidgets.QWidget):
         super(MainWidget, self).__init__(parent)
 
 
-        self.window_3d: CubeView = CubeView()
+        self.window_3d: CubeView = CubeView(gui_parent=self)
         self.window_3d_widget = self.window_3d.widget
         # widget_3d = QtWidgets.QWidget.createWindowContainer(window_3d)
 
@@ -30,11 +30,12 @@ class MainWidget(QtWidgets.QWidget):
         # widget_3d.setMaximumSize(screenSize)
         # widget_3d.setMinimumSize(QtCore.QSize(200, 100))
 
-        widget_menu = MenuWidget()
+        self.widget_menu = MenuWidget()
 
         layout = QHBoxLayout(self)
         layout.addWidget(self.window_3d_widget, 1)
-        layout.addWidget(widget_menu)
+        layout.addWidget(self.widget_menu)
+
 
         # self.setLayout(layout)
 

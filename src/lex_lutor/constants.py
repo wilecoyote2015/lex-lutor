@@ -6,6 +6,8 @@ HSV = 'HSV'
 HSL = 'HSL'
 HCL = 'HCL'
 
+KEY_EXPOSURE = Qt.Key_E
+
 # color space and color space dimension along which to move a node
 color_spaces_components_transform = {
     Qt.Key_R: (None, 0),

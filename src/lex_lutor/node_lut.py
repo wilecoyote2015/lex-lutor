@@ -10,11 +10,13 @@ from PySide6.Qt3DInput import Qt3DInput
 from PySide6.Qt3DRender import Qt3DRender
 # from PySide6 import Qt3DCore, Qt3DExtras, Qt3DInput, Qt3DRender
 import sys
-from lex_lutor.constants import HSV, HSL, HCL, color_spaces_components_transform
+import colour
+from lex_lutor.constants import HSV, HSL, HCL, color_spaces_components_transform, KEY_EXPOSURE
 
 
 
 class NodeLut(Qt3DCore.QEntity):
+    position_changed = QtCore.Signal(tuple, QVector3D) # indices, coordinates
     def __init__(self, indices_lut: tuple, coordinates: QVector3D, color_source: QtGui.QColor, radius: int, lut_parent=None):
         super(NodeLut, self).__init__(lut_parent)
         self.indices_lut = indices_lut
@@ -30,6 +32,7 @@ class NodeLut(Qt3DCore.QEntity):
         self.coordinates_current = coordinates
 
         self.transform = Qt3DCore.QTransform(translation=coordinates)
+        self.transform.translationChanged.connect(self.send_signal_position_changed)
         self.color_source = color_source
 
         # TODO: must be changed in slot on movement!
@@ -68,14 +71,30 @@ class NodeLut(Qt3DCore.QEntity):
         self.addComponent(self.picker)
         # self.picker.clicked.connect(self.parentEntity().slot_clicked)
 
+    @QtCore.Slot(QVector3D)
+    def send_signal_position_changed(self, coordinates):
+        print('Emit')
+        self.position_changed.emit(self.indices_lut, coordinates)
+
     @QtCore.Slot(int, float, float)
     def transform_dragging(self, mode, distance, weight):
         # TODO: always clip to domain: Value must be stuck at domain border,
         #   so one must find the point in movement path where at border.
-        print('trafo')
+
+        # TODO: Exposure. For this, first transformation must be into linear RGB.
+        #   But how is exposure calculated then? Effect of exposure must not depend on linear color space
+        #   choice. How is the transfer function handled in colour?
+
+        # TODO: Linear space if upper case
         distance_weighted = distance*weight
 
-        #
+        # if mode == KEY_EXPOSURE:
+        #     coords_linear = self.transform_color_space(
+        #         self.lut_parent.color_space,
+        #         colour.gamma_function()
+        #         self.coordinates_current
+        #     )
+        # else:
         color_space_transform, dimension_transform = color_spaces_components_transform[mode]
         coords_current_target_space = self.transform_color_space(
             self.lut_parent.color_space,
@@ -85,8 +104,6 @@ class NodeLut(Qt3DCore.QEntity):
 
         components_vector_add = [1. if idx_ == dimension_transform else 0. for idx_ in range(3)]
         coords_new_target_space = coords_current_target_space + QVector3D(*components_vector_add) * distance_weighted
-
-
 
         # transform to target color space, modify the according component and then
 
