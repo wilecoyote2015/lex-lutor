@@ -86,43 +86,154 @@ class NodeLut(Qt3DCore.QEntity):
         #   choice. How is the transfer function handled in colour?
 
         # TODO: Linear space if upper case
-        distance_weighted = distance*weight
-
-        # if mode == KEY_EXPOSURE:
-        #     coords_linear = self.transform_color_space(
-        #         self.lut_parent.color_space,
-        #         colour.gamma_function()
-        #         self.coordinates_current
-        #     )
-        # else:
         color_space_transform, dimension_transform = color_spaces_components_transform[mode]
-        coords_current_target_space = self.transform_color_space(
-            self.lut_parent.color_space,
-            color_space_transform,
-            self.coordinates_current
-        )
 
-        components_vector_add = [1. if idx_ == dimension_transform else 0. for idx_ in range(3)]
-        coords_new_target_space = coords_current_target_space + QVector3D(*components_vector_add) * distance_weighted
+        if (color_space_transform in (HSV, HSL, HCL) and dimension_transform in [0, 1]
+                and self.coordinates_current.x() == self.coordinates_current.y() == self.coordinates_current.z()):
+            # If target compomnent is related to color, then nothing to do.
+            return
 
-        # transform to target color space, modify the according component and then
+        try:
+            distance_weighted = distance*weight
 
-        coords_new = self.transform_color_space(
-            color_space_transform,
-            self.lut_parent.color_space,
-            coords_new_target_space
-        )
+            coords_current_target_space = self.transform_color_space(
+                self.lut_parent.color_space,
+                color_space_transform,
+                self.coordinates_current
+            )
 
-        # TODO: clip to borders
-        # TODO: Clipping must be reflected in the trafo fn, as it must handle color space correctly (
-        #  e.g. pertain hue on clipping)
+            components_vector_add = [1. if idx_ == dimension_transform else 0. for idx_ in range(3)]
+            coords_new_target_space = coords_current_target_space + QVector3D(*components_vector_add) * distance_weighted
+            print(coords_new_target_space.toTuple())
+            if color_space_transform in (HSV, HSL, HCL) and dimension_transform == 0:
+                print(coords_new_target_space.x())
+                coords_new_target_space.setX(np.mod(coords_new_target_space.x(), 1.))
+            elif color_space_transform == HCL and dimension_transform == 1:
+                coords_new_target_space.setY(np.clip(coords_new_target_space.y(), 0, 2/3))
+            elif color_space_transform == HSL and dimension_transform == 2:
+                coords_new_target_space.setZ(self.clip_l(*coords_new_target_space.toTuple()))
+                pass
+            else:
+                # TODO: Luma clipping is still wrong. See https://www.rapidtables.com/convert/color/hsl-to-rgb.html
+                #   and calculate the min / max points where either X +m or C+M out of [0,1].
 
-        self.transform.setTranslation(coords_new)
+            
+                # TODO: clipping to own function
+                # TODO: respect domain!
+                if dimension_transform == 0:
+                    coords_new_target_space.setX(np.clip(coords_new_target_space.x(), 0, 1))
+                elif dimension_transform == 1:
+                    coords_new_target_space.setY(np.clip(coords_new_target_space.y(), 0, 1))
+                elif dimension_transform == 2:
+                    coords_new_target_space.setZ(np.clip(coords_new_target_space.z(), 0, 1))
+
+            # transform to target color space, modify the according component and then
+
+            coords_new = self.transform_color_space(
+                color_space_transform,
+                self.lut_parent.color_space,
+                coords_new_target_space
+            )
+
+            # TODO: clip to borders
+            # TODO: Clipping must be reflected in the trafo fn, as it must handle color space correctly (
+            #  e.g. pertain hue on clipping)
+
+            self.transform.setTranslation(coords_new)
+        except Exception as e:
+            print(f'Error during transformation of node {self.indices_lut}: \n {e}')
         # TODO: during dragging, this function calculates the new position based on the mode
         #   (which is mapped to a color transform function (e.g. Hue) of the current color space)
         #   and applies it to the transform.
         #   new position is calculated using distance, relative to coordinates_current.
         #   mode is a qt.key in code
+
+    def clip_l(self, h, s, l):
+        '''
+
+                    C = (1-|2L-1|)S
+                    m = L - C/2
+                    C + m = (1 - |2L-1|)S / 2 + L
+
+                    C- = (1 + 2L - 1) * S       ( L <= 0.5)
+                    C+ = (1 - 2L + 1) * S       ( L > 0.5)
+
+
+                    fall L <= 0.5:
+                        C+m =  (1 + 2L - 1)S/2 +L = L * S + L
+                            = L(1+S)
+                    fall L > 0.5:
+                        C+m =  (1 - 2L + 1)S/2 +L
+                            = (2 - 2L) * S/2 + L
+                            = (1 - L) * S + L
+                            = S - LS + L
+                            = S + (1-S) * L
+
+
+                    A = 1 - |(H/60) % 2 - 1|
+                    B = S * A
+                    Z = S * (A - 1/2)
+                    X = A * C
+                    X + m = A * C - C/2 + L
+                          = C (A - 1/2) + L
+                    fall L <= 0.5:
+                        X + m =  C- (A - 1/2) + L
+                              = (1 + 2L - 1) * S * (A - 1/2) + L
+                              = (1 + 2L - 1) * Z + L
+                              = 2L * Z + L
+                              = L ( 2 * Z + 1)
+                    fall L > 0.5:
+                        X+m = C+ (A - 1/2) + L
+                            = (1 - 2L + 1) * Z + L
+                            = (2 - 2L) * Z + L
+                            = 2Z - 2LZ + L
+                            = 2Z + L(1-2Z)
+
+                    => C+m=0 wenn:
+                        L = 0 
+                        L = -S / (1-S) und L > 0.5 (L must be >= -S / (1+S) WHICH IS ALWAYS TRUE)
+
+                    => X+m = 0 wenn:
+                        L = 0 
+                        # ATTENTION: Hue is in range 0-1 instead of degree in colour! convert to degree!
+                        L = - 2Z / (1-2Z) and L > 0.5 ( L darf nicht kleiner werden!)
+
+                    => C+m=1 wenn: 
+                        L = 1 / (1+S) and L <= 0.5 (L darf nicht groesser werden)
+                        L = 1 and L > 0.5 (L darf nicht griesser werden
+
+                    => X+m = 1 wenn:
+                        L = 1 / ( 2Z + 1) and L <= 0.5
+                        L = (1-2Z) / (1-2Z) = 1  and L > 0.5  => NIE! (L darf nicht groesser werden)
+                    '''
+        h_deg = h * 360
+        A = 1 - abs((h_deg / 60) % 2 - 1)
+        Z = s * (A - 1/2)
+
+    # colour.HSL_to_RGB()
+        print(f'h = {h}, s = {s}, l = {l}, A = {A}, Z = {Z}')
+                
+        if l <= 0.5:
+            lower = 0.
+            upper = np.minimum(
+                1.,
+                1 / (1+s)
+            )
+        else:
+            lower = np.maximum(
+                -s / (1-s),
+                -2*Z / (1 - 2*Z)
+            )
+            
+            upper = np.minimum(
+                1.,
+                1.
+            )
+
+        print(lower)
+        print(upper)
+
+        return np.clip(l, lower, upper)
 
     def transform_color_space(self, color_space_source, color_space_target, value_input: QVector3D):
         if color_space_target == color_space_source or color_space_target is None or color_space_source is None:

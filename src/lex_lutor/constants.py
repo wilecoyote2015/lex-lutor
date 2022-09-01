@@ -16,7 +16,7 @@ color_spaces_components_transform = {
     Qt.Key_H: (HSV, 0),
     Qt.Key_S: (HSL, 1),
     Qt.Key_V: (HSV, 2),
-    Qt.Key_L: (HCL, 0),
+    Qt.Key_L: (HSL, 2),
     Qt.Key_C: (HCL, 1)
 
 }

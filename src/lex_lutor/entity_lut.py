@@ -139,7 +139,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
         entity: NodeLut = event.entity()
         modifiers = event.modifiers()
 
-        if event.button() == Qt3DRender.QPickEvent.LeftButton:
+        if event.button() == Qt3DRender.QPickEvent.LeftButton and self.parent_gui.mode_transform_current is None:
             if modifiers == Qt3DRender.QPickEvent.ShiftModifier:
                 entity.select(not entity.is_selected)
             else:

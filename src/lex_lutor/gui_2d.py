@@ -52,6 +52,9 @@ class MenuWidget(QtWidgets.QWidget):
         button_test2 = QPushButton('test2')
 
         self.thread_image = None
+        self.thread_image_waiting = None
+        self.worker_image = None
+        self.worker_image_waiting = None
 
         self.label_image = QtWidgets.QLabel()
         self.img_base = cv2.resize(colour.io.read_image(
@@ -82,25 +85,20 @@ class MenuWidget(QtWidgets.QWidget):
         self.label_image.setPixmap(
             QtGui.QPixmap(image_updated)
         )
+
+        # if thread is None, the worker was worker_waiting
+        if self.thread_image is None:
+            self.worker_image_waiting = None
+            self.thread_image_waiting = None
+
         self.thread_image = None
+        self.worker_image = None
 
+    @QtCore.Slot()
+    def start_update_image_waiting(self):
+        if self.thread_image_waiting is not None and self.worker_image_waiting is not None:
+            self.thread_image.start()
 
-    @QtCore.Slot(colour.LUT3D)
-    def update_image(self, lut):
-        # print('emit')
-        image_transformed = lut.apply(self.img_base)
-        img_uint = (image_transformed * 255).astype(np.uint8, order='c')
-        qimage = QtGui.QImage(
-            img_uint,
-            self.img_base.shape[1],
-            self.img_base.shape[0],
-            self.img_base.shape[1] * 3,
-            QtGui.QImage.Format_RGB888
-        )
-        self.label_image.setPixmap(
-            QtGui.QPixmap(qimage)
-
-        )
 
     @QtCore.Slot(colour.LUT3D)
     def start_update_image(self, lut):
@@ -109,7 +107,16 @@ class MenuWidget(QtWidgets.QWidget):
         #   a previous is finished. But this means that the last movement
         #   input before stopping the cursor will not be
         #   computed, which is bad for fast cursor movements.
+        #   tried with second thread. But logic is complicated!
         if self.thread_image is not None:
+            # self.thread_image_waiting = QtCore.QThread()
+            # self.worker_image_waiting = WorkerLut(self.img_base, lut)
+            # self.worker_image_waiting.moveToThread(self.thread_image_waiting)
+            # self.worker_image_waiting.finished.connect(self.thread_image_waiting.quit)
+            # self.worker_image_waiting.finished.connect(self.worker_image_waiting.deleteLater)
+            # self.worker_image_waiting.finished.connect(self.update_image_async)
+            # self.thread_image_waiting.finished.connect(self.thread_image_waiting.deleteLater)
+            # self.thread_image_waiting.started.connect(self.worker_image_waiting.run)
             return
 
         self.thread_image = QtCore.QThread()
@@ -118,6 +125,7 @@ class MenuWidget(QtWidgets.QWidget):
         self.worker_image.finished.connect(self.thread_image.quit)
         self.worker_image.finished.connect(self.worker_image.deleteLater)
         self.worker_image.finished.connect(self.update_image_async)
+        self.worker_image.finished.connect(self.start_update_image_waiting)
         self.thread_image.finished.connect(self.thread_image.deleteLater)
         self.thread_image.started.connect(self.worker_image.run)
 
