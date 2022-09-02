@@ -153,7 +153,7 @@ class MenuWidget(QtWidgets.QWidget):
                 except RuntimeError:
                     pass
 
-                thread.quit()
+                thread.terminate()
 
 
         self.threads_image.append((QtCore.QThread(), WorkerLut(self.img_base, lut)))

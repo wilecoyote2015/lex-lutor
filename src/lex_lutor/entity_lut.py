@@ -8,6 +8,7 @@ from PySide6.Qt3DExtras import Qt3DExtras
 from PySide6.QtGui import (QGuiApplication, QMatrix4x4, QQuaternion, QVector3D)
 from PySide6.Qt3DInput import Qt3DInput
 from PySide6.Qt3DRender import Qt3DRender
+
 # from PySide6 import Qt3DCore, Qt3DExtras, Qt3DInput, Qt3DRender
 import sys
 from lex_lutor.node_lut import NodeLut
@@ -32,6 +33,7 @@ from datetime import datetime, timedelta
 
 class Lut3dEntity(Qt3DCore.QComponent):
     lut_changed = QtCore.Signal(colour.LUT3D)
+    start_preview_weights = QtCore.Signal(colour.LUT3D)
 
     def __init__(self, lut, parent_gui):
         super().__init__()
@@ -43,6 +45,8 @@ class Lut3dEntity(Qt3DCore.QComponent):
         self.color_space: colour.models.RGB_Colourspace = None
 
         self.load_lut(lut)
+
+        self.start_preview_weights.connect(self.parent_gui.gui_parent.widget_menu.start_update_image)
 
         # self.time_last_change = datetime.now()
         # self.timedelta_update = timedelta(milliseconds=100)
@@ -110,7 +114,8 @@ class Lut3dEntity(Qt3DCore.QComponent):
                     # entity_node.mouse_hover_start.connect(self.parent_gui.gui_parent.widget_menu.slot_hover_node_start)
                     # entity_node.mouse_hover_stop.connect(self.parent_gui.gui_parent.widget_menu.slot_hover_node_stop)
 
-                    entity_node.mouse_hover_start.connect(self.parent_gui.gui_parent.widget_menu.start_update_image)
+                    # entity_node.mouse_hover_start.connect()
+                    entity_node.mouse_hover_start.connect(self.slot_start_preview_weights)
                     entity_node.mouse_hover_stop.connect(self.parent_gui.gui_parent.widget_menu.start_update_image)
 
 
@@ -123,6 +128,26 @@ class Lut3dEntity(Qt3DCore.QComponent):
                 nodes_r.append(nodes_g)
             nodes_lut.append(nodes_r)
         self.nodes_lut = nodes_lut
+
+    @QtCore.Slot(tuple)
+    def slot_start_preview_weights(self, indices_node):
+        if self.parent_gui.mode_transform_current is None:
+            lut_use = colour.LUT3D(
+                colour.LUT3D.linear_table(self.lut.size) ** 2
+            )
+
+            lut_use.table = np.tile(np.mean(self.lut.table, axis=3)[..., np.newaxis], (1, 1, 1, 3))
+            lut_use.table[indices_node] = [1., 0., 0.]
+
+            modifiers = QGuiApplication.keyboardModifiers()
+            if modifiers in (QtCore.Qt.Modifier.CTRL, QtCore.Qt.Modifier.CTRL + QtCore.Qt.Modifier.SHIFT ):
+                def fn(node: NodeLut):
+                    if node.is_selected:
+                        lut_use.table[node.indices_lut] = [1., 0., 0.]
+                self.iter_nodes(fn)
+
+            print('start')
+            self.start_preview_weights.emit(lut_use)
 
     @QtCore.Slot(int, float)
     def transform_dragging(self, mode, distance):
@@ -151,7 +176,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
         modifiers = event.modifiers()
 
         if event.button() == Qt3DRender.QPickEvent.LeftButton and self.parent_gui.mode_transform_current is None:
-            if modifiers == Qt3DRender.QPickEvent.ShiftModifier:
+            if modifiers == Qt3DRender.QPickEvent.ShiftModifier or modifiers == Qt3DRender.QPickEvent.ShiftModifier + Qt3DRender.QPickEvent.ControlModifier:
                 entity.select(not entity.is_selected)
             else:
                 fn = lambda node: node.select(not node.is_selected and node is entity)

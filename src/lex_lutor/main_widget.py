@@ -41,3 +41,6 @@ class MainWidget(QtWidgets.QWidget):
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
         self.window_3d.keyPressEvent(event)
+
+    def keyReleaseEvent(self, event: QtGui.QKeyEvent) -> None:
+        self.window_3d.keyReleaseEvent(event)

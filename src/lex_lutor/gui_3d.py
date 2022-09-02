@@ -14,6 +14,8 @@ from lex_lutor.entity_lut import Lut3dEntity
 from lex_lutor.constants import color_spaces_components_transform
 
 
+# TODO: can the signals and slots be moved to entity_lut?
+
 
 class OrbitTransformController(QObject):
 
@@ -119,6 +121,7 @@ class CubeView(Qt3DExtras.Qt3DWindow):
             elif event.button() == QtGui.Qt.MouseButton.RightButton:
                 self.mode_transform_current = None
                 self.cancel_transform.emit()
+
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
         # TODO: trigger transform slot of all selected nodes (and later those that are in smooth transform radius)
         if self.mode_transform_current is not None:

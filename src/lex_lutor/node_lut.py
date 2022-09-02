@@ -17,7 +17,7 @@ from lex_lutor.constants import HSV, HSL, HCL, color_spaces_components_transform
 
 class NodeLut(Qt3DCore.QEntity):
     position_changed = QtCore.Signal(tuple, QVector3D) # indices, coordinates
-    mouse_hover_start = QtCore.Signal(colour.LUT3D)
+    mouse_hover_start = QtCore.Signal(tuple)
     mouse_hover_stop = QtCore.Signal(colour.LUT3D )
 
     def __init__(self, indices_lut: tuple, coordinates: QVector3D, color_source: QtGui.QColor, radius: int, lut_parent=None):
@@ -284,14 +284,5 @@ class NodeLut(Qt3DCore.QEntity):
 
     @QtCore.Slot()
     def emit_mouse_hover_start(self):
-        if self.lut_parent.parent_gui.mode_transform_current is None:
-            lut_use = colour.LUT3D(
-                colour.LUT3D.linear_table(self.lut_parent.lut.size) ** 2
-            )
-
-            lut_use.table = np.tile(np.mean(self.lut_parent.lut.table, axis=3)[..., np.newaxis], (1, 1, 1, 3))
-            lut_use.table[self.indices_lut] = [1., 0., 0.]
-            print('start')
-
-            self.mouse_hover_start.emit(lut_use)
+        self.mouse_hover_start.emit(self.indices_lut)
 
