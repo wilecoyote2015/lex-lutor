@@ -49,7 +49,6 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
         # TODO: find a better way to block lut calc....
         #   use qtimer as long as dragging, so that update is performed on regular intervals?
-        self.working = False
 
 
         # self.root_entity = None

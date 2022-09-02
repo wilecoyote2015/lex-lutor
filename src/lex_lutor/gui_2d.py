@@ -56,6 +56,8 @@ class MenuWidget(QtWidgets.QWidget):
         self.worker_image = None
         self.worker_image_waiting = None
 
+        self.threads_image: [QtCore.QThread, QtCore.QObject] = []
+
         self.label_image = QtWidgets.QLabel()
         self.img_base = cv2.resize(colour.io.read_image(
             '/home/bjoern/PycharmProjects/darktabe_hald_generator/samples/provia/DSCF0326.JPG'
@@ -123,6 +125,22 @@ class MenuWidget(QtWidgets.QWidget):
         if self.thread_image_waiting is not None and self.worker_image_waiting is not None:
             self.thread_image.start()
 
+    def clean_threads(self):
+        # TODO: does this intruduce a memory leak?
+
+        threads_new = []
+        for thread, worker in self.threads_image:
+            try:
+                finished = thread.isFinished()
+            except RuntimeError:
+                continue
+
+            if not finished:
+                threads_new.append((thread, worker))
+
+        self.threads_image = threads_new
+
+        # self.threads_image = [t for t in self.threads_image if t[0] and not t[0].isFinished()]
 
     @QtCore.Slot(colour.LUT3D)
     def start_update_image(self, lut):
@@ -132,8 +150,23 @@ class MenuWidget(QtWidgets.QWidget):
         #   input before stopping the cursor will not be
         #   computed, which is bad for fast cursor movements.
         #   tried with second thread. But logic is complicated!
-        if self.thread_image is not None:
-            # self.thread_image.terminate()
+        self.clean_threads()
+
+        if self.threads_image:
+            for thread, worker in self.threads_image:
+                worker.finished.disconnect(self.start_update_image_waiting)
+                #
+                # try:
+                # except RuntimeError:
+                #     pass
+
+                thread.quit()
+
+
+
+        # if self.thread_image is not None:
+        #     self.thread_image.terminate()
+            # self.thread_image = None
             # self.thread_image.wait()
             # self.thread_image_waiting = QtCore.QThread()
             # self.worker_image_waiting = WorkerLut(self.img_base, lut)
@@ -145,17 +178,15 @@ class MenuWidget(QtWidgets.QWidget):
             # self.thread_image_waiting.started.connect(self.worker_image_waiting.run)
             # TODO: works better if just returning!
             #   But hover does not work well. Try to get termination working
-            return
+            # return
 
-        self.thread_image = QtCore.QThread()
-        self.worker_image = WorkerLut(self.img_base, lut)
-        self.worker_image.moveToThread(self.thread_image)
-        self.worker_image.finished.connect(self.thread_image.quit)
-        self.worker_image.finished.connect(self.worker_image.deleteLater)
-        self.worker_image.finished.connect(self.update_image_async)
-        self.worker_image.finished.connect(self.start_update_image_waiting)
-        self.thread_image.finished.connect(self.thread_image.deleteLater)
-        self.thread_image.started.connect(self.worker_image.run)
+        self.threads_image.append((QtCore.QThread(), WorkerLut(self.img_base, lut)))
+        self.threads_image[-1][1].moveToThread(self.threads_image[-1][0])
+        self.threads_image[-1][1].finished.connect(self.threads_image[-1][0].quit)
+        self.threads_image[-1][1].finished.connect(self.threads_image[-1][1].deleteLater)
+        self.threads_image[-1][1].finished.connect(self.update_image_async)
+        self.threads_image[-1][0].finished.connect(self.threads_image[-1][0].deleteLater)
+        self.threads_image[-1][0].started.connect(self.threads_image[-1][1].run)
 
 
-        self.thread_image.start()
+        self.threads_image[-1][0].start()
