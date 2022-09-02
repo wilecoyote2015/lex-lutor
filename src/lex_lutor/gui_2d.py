@@ -144,41 +144,17 @@ class MenuWidget(QtWidgets.QWidget):
 
     @QtCore.Slot(colour.LUT3D)
     def start_update_image(self, lut):
-        # print('start')
-        # TODO / FIXME: this way, a new thread is only started when
-        #   a previous is finished. But this means that the last movement
-        #   input before stopping the cursor will not be
-        #   computed, which is bad for fast cursor movements.
-        #   tried with second thread. But logic is complicated!
         self.clean_threads()
 
         if self.threads_image:
             for thread, worker in self.threads_image:
-                worker.finished.disconnect(self.start_update_image_waiting)
-                #
-                # try:
-                # except RuntimeError:
-                #     pass
+                try:
+                    worker.finished.disconnect(self.start_update_image_waiting)
+                except RuntimeError:
+                    pass
 
                 thread.quit()
 
-
-
-        # if self.thread_image is not None:
-        #     self.thread_image.terminate()
-            # self.thread_image = None
-            # self.thread_image.wait()
-            # self.thread_image_waiting = QtCore.QThread()
-            # self.worker_image_waiting = WorkerLut(self.img_base, lut)
-            # self.worker_image_waiting.moveToThread(self.thread_image_waiting)
-            # self.worker_image_waiting.finished.connect(self.thread_image_waiting.quit)
-            # self.worker_image_waiting.finished.connect(self.worker_image_waiting.deleteLater)
-            # self.worker_image_waiting.finished.connect(self.update_image_async)
-            # self.thread_image_waiting.finished.connect(self.thread_image_waiting.deleteLater)
-            # self.thread_image_waiting.started.connect(self.worker_image_waiting.run)
-            # TODO: works better if just returning!
-            #   But hover does not work well. Try to get termination working
-            # return
 
         self.threads_image.append((QtCore.QThread(), WorkerLut(self.img_base, lut)))
         self.threads_image[-1][1].moveToThread(self.threads_image[-1][0])
