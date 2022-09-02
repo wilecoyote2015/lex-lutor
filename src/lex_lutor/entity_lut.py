@@ -105,6 +105,18 @@ class Lut3dEntity(Qt3DCore.QComponent):
                         self
                     )
                     entity_node.picker.clicked.connect(self.slot_clicked)
+                    # TODO: use one picker for all nodes...
+                    # TODO: only enable hover whole holding shift?
+                    entity_node.picker.setHoverEnabled(True)
+                    # entity_node.mouse_hover_start.connect(self.parent_gui.gui_parent.widget_menu.slot_hover_node_start)
+                    # entity_node.mouse_hover_stop.connect(self.parent_gui.gui_parent.widget_menu.slot_hover_node_stop)
+
+                    entity_node.mouse_hover_start.connect(self.parent_gui.gui_parent.widget_menu.start_update_image)
+                    entity_node.mouse_hover_stop.connect(self.parent_gui.gui_parent.widget_menu.start_update_image)
+
+
+
+
                     entity_node.position_changed.connect(self.update_lut_node_changed)
                     self.parent_gui.cancel_transform.connect(entity_node.cancel_transform)
                     self.parent_gui.accept_transform.connect(entity_node.accept_transform)

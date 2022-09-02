@@ -80,6 +80,30 @@ class MenuWidget(QtWidgets.QWidget):
 
         self.setLayout(layout)
 
+    # @QtCore.Slot(tuple, colour.LUT3D)
+    # def slot_hover_node_stop(self, indices, lut):
+    #     print('stopped hover')
+    #     # FIXME: This destroys update on dragging
+    #     # self.start_update_image(lut)
+
+    # @QtCore.Slot(tuple, QVector3D, colour.LUT3D)
+    # def slot_hover_node_start(self, indices, coordinates, lut):
+    #     # Make empty LUT of size
+    #     # TODO: handle domain!
+    #     lut_use = colour.LUT3D(
+    #         colour.LUT3D.linear_table(lut.size)
+    #     )
+    #
+    #     lut_use.table = np.mean(lut_use.table, axis=3)[..., np.newaxis]
+    #     lut_use.table[lut.indices] = [1., 0., 0.]
+    #
+    #     self.start_update_image()
+    #
+    #     # Make selected red
+    #
+    #     # render
+    #     print('started hover')
+
     @QtCore.Slot(QtGui.QImage)
     def update_image_async(self, image_updated):
         self.label_image.setPixmap(
@@ -109,6 +133,8 @@ class MenuWidget(QtWidgets.QWidget):
         #   computed, which is bad for fast cursor movements.
         #   tried with second thread. But logic is complicated!
         if self.thread_image is not None:
+            # self.thread_image.terminate()
+            # self.thread_image.wait()
             # self.thread_image_waiting = QtCore.QThread()
             # self.worker_image_waiting = WorkerLut(self.img_base, lut)
             # self.worker_image_waiting.moveToThread(self.thread_image_waiting)
@@ -117,6 +143,8 @@ class MenuWidget(QtWidgets.QWidget):
             # self.worker_image_waiting.finished.connect(self.update_image_async)
             # self.thread_image_waiting.finished.connect(self.thread_image_waiting.deleteLater)
             # self.thread_image_waiting.started.connect(self.worker_image_waiting.run)
+            # TODO: works better if just returning!
+            #   But hover does not work well. Try to get termination working
             return
 
         self.thread_image = QtCore.QThread()

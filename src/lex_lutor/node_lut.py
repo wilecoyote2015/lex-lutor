@@ -17,6 +17,9 @@ from lex_lutor.constants import HSV, HSL, HCL, color_spaces_components_transform
 
 class NodeLut(Qt3DCore.QEntity):
     position_changed = QtCore.Signal(tuple, QVector3D) # indices, coordinates
+    mouse_hover_start = QtCore.Signal(colour.LUT3D)
+    mouse_hover_stop = QtCore.Signal(colour.LUT3D )
+
     def __init__(self, indices_lut: tuple, coordinates: QVector3D, color_source: QtGui.QColor, radius: int, lut_parent=None):
         super(NodeLut, self).__init__(lut_parent)
         self.indices_lut = indices_lut
@@ -69,6 +72,8 @@ class NodeLut(Qt3DCore.QEntity):
 
         self.picker = Qt3DRender.QObjectPicker(self.parentEntity())
         self.addComponent(self.picker)
+        self.picker.exited.connect(self.emit_mouse_hover_stop)
+        self.picker.entered.connect(self.emit_mouse_hover_start)
         # self.picker.clicked.connect(self.parentEntity().slot_clicked)
 
     @QtCore.Slot(QVector3D)
@@ -114,8 +119,7 @@ class NodeLut(Qt3DCore.QEntity):
                 coords_new_target_space.setZ(self.clip_l(*coords_new_target_space.toTuple()))
                 pass
             else:
-                # TODO: Luma clipping is still wrong. See https://www.rapidtables.com/convert/color/hsl-to-rgb.html
-                #   and calculate the min / max points where either X +m or C+M out of [0,1].
+                # TODO: Chroma clipping is still wrong...
 
             
                 # TODO: clipping to own function
@@ -211,7 +215,7 @@ class NodeLut(Qt3DCore.QEntity):
         Z = s * (A - 1/2)
 
     # colour.HSL_to_RGB()
-        print(f'h = {h}, s = {s}, l = {l}, A = {A}, Z = {Z}')
+    #     print(f'h = {h}, s = {s}, l = {l}, A = {A}, Z = {Z}')
                 
         if l <= 0.5:
             lower = 0.
@@ -230,8 +234,8 @@ class NodeLut(Qt3DCore.QEntity):
                 1.
             )
 
-        print(lower)
-        print(upper)
+        # print(lower)
+        # print(upper)
 
         return np.clip(l, lower, upper)
 
@@ -273,3 +277,20 @@ class NodeLut(Qt3DCore.QEntity):
     def select(self, is_selected):
         self.material.setAmbient(self.color_selected if is_selected else self.color_source)
         self.is_selected = is_selected
+
+    @QtCore.Slot()
+    def emit_mouse_hover_stop(self):
+        self.mouse_hover_stop.emit(self.lut_parent.lut)
+
+    @QtCore.Slot()
+    def emit_mouse_hover_start(self):
+        lut_use = colour.LUT3D(
+            colour.LUT3D.linear_table(self.lut_parent.lut.size) ** 2
+        )
+
+        lut_use.table = np.tile(np.mean(self.lut_parent.lut.table, axis=3)[..., np.newaxis], (1, 1, 1, 3))
+        lut_use.table[self.indices_lut] = [1., 0., 0.]
+        print('start')
+
+        self.mouse_hover_start.emit(lut_use)
+
