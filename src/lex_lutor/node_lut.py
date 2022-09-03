@@ -20,7 +20,7 @@ class NodeLut(Qt3DCore.QEntity):
     mouse_hover_start = QtCore.Signal(tuple)
     mouse_hover_stop = QtCore.Signal(colour.LUT3D )
 
-    def __init__(self, indices_lut: tuple, coordinates: QVector3D, color_source: QtGui.QColor, radius: int, lut_parent=None):
+    def __init__(self, indices_lut: tuple, coordinates_target: QVector3D, coordinates_source: QVector3D, radius: int, lut_parent=None):
         super(NodeLut, self).__init__(lut_parent)
         self.indices_lut = indices_lut
         self.lut_parent= lut_parent
@@ -32,21 +32,26 @@ class NodeLut(Qt3DCore.QEntity):
         # TODO: coordinates etc. should be qvector.
 
         # Those coordinates are kept during ongoing transformation until transformation is finished
-        self.coordinates_current = coordinates
+        self.coordinates_current = coordinates_target
+        self.coordinates_source = coordinates_source
 
-        self.transform = Qt3DCore.QTransform(translation=coordinates)
+        self.transform = Qt3DCore.QTransform(translation=coordinates_target)
         self.transform.translationChanged.connect(self.send_signal_position_changed)
-        self.color_source = color_source
 
         # TODO: must be changed in slot on movement!
         self.color_target = QtGui.QColor(
-                                coordinates.x()*255,
-                                coordinates.y()*255,
-                                coordinates.z()*255,
+            coordinates_target.x() * 255,
+            coordinates_target.y() * 255,
+            coordinates_target.z() * 255,
                                 255
                             )
 
-
+        self.color_source = QtGui.QColor(
+            coordinates_source.x() * 255,
+            coordinates_source.y() * 255,
+            coordinates_source.z() * 255,
+                                255
+                            )
 
         self.color_selected = QtGui.QColor(
             255,

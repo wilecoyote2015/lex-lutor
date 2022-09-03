@@ -48,6 +48,9 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
         self.start_preview_weights.connect(self.parent_gui.gui_parent.widget_menu.start_update_image)
 
+        self.parent_gui.gui_parent.widget_menu.select_nodes_affecting_pixel.connect(self.select_nodes_by_source_colour_affecting)
+        self.parent_gui.gui_parent.widget_menu.select_node_closest_pixel.connect(self.select_nodes_by_source_colour_closest)
+
         # self.time_last_change = datetime.now()
         # self.timedelta_update = timedelta(milliseconds=100)
 
@@ -58,7 +61,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
         # self.root_entity = None
 
 
-    def get_values_lut_source(self, lut: colour.LUT3D):
+    def get_coordinates_lut_source(self, lut: colour.LUT3D):
         values_r_source = np.linspace(lut.domain[0,0], lut.domain[1,0], lut.size)
         values_g_source = np.linspace(lut.domain[0,1], lut.domain[1,1], lut.size)
         values_b_source = np.linspace(lut.domain[0,2], lut.domain[1,2], lut.size)
@@ -70,14 +73,50 @@ class Lut3dEntity(Qt3DCore.QComponent):
     # def load_lut_file(self, filepath):
     #     lut =
 
+    def find_nodes_influencing_pixel(self, coordinates_pixel: QVector3D):
+        result = []
+
+        max_distances = (self.lut.domain[1] - self.lut.domain[0]) / (self.lut.size - 1)
+
+        def fn(node: NodeLut):
+            node_affects_pixel = np.all(
+                np.abs(
+                    (node.coordinates_source - coordinates_pixel).toTuple()
+                ) < max_distances
+            )
+            if node_affects_pixel:
+                result.append(node)
+
+        self.iter_nodes(fn)
+
+        return result
+
+    def find_nearest_node_pixel(self, coordinates_pixel: QVector3D):
+        distance_min = [np.inf]
+        result = [None]
+
+        def fn(node: NodeLut):
+            distance = coordinates_pixel.distanceToPoint(node.coordinates_source)
+
+            if distance < distance_min[0]:
+                result[0] = node
+                distance_min[0] = distance
+
+        self.iter_nodes(fn)
+
+        return result[0]
+
 
     def load_lut(self, lut: colour.LUT3D):
+        if np.any(lut.domain != np.asarray([[0, 0, 0], [1, 1, 1]])):
+            raise NotImplementedError
+
         self.lut = lut
 
         # TODO: 2 textures: source and target, that can be switched
         # TODO: Color map from lut space to display srgb
 
-        values_r_source, values_g_source, values_b_source = self.get_values_lut_source(lut)
+        coordinates_r_source, coordinates_g_source, coordinates_b_source = self.get_coordinates_lut_source(lut)
 
         radius = np.min(lut.domain[1] - lut.domain[0]) / lut.size / 5
 
@@ -86,11 +125,11 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
 
         nodes_lut = []
-        for idx_r, value_r_source in enumerate(values_r_source):
+        for idx_r, value_r_source in enumerate(coordinates_r_source):
             nodes_r = []
-            for idx_g, value_g_source in enumerate(values_g_source):
+            for idx_g, value_g_source in enumerate(coordinates_g_source):
                 nodes_g = []
-                for idx_b, value_b_source in enumerate(values_b_source):
+                for idx_b, value_b_source in enumerate(coordinates_b_source):
                     entity_node = NodeLut(
                         (idx_r, idx_g, idx_b),
                         QVector3D(
@@ -98,11 +137,10 @@ class Lut3dEntity(Qt3DCore.QComponent):
                             lut.table[idx_r, idx_g, idx_b, 1],
                             lut.table[idx_r, idx_g, idx_b, 2],
                         ),
-                        QtGui.QColor(
-                            value_r_source * color_max,
-                            value_g_source * color_max,
-                            value_b_source * color_max,
-                            255
+                        QVector3D(
+                            value_r_source,
+                            value_g_source,
+                            value_b_source,
                         ),
                         radius,
                         self
@@ -165,6 +203,18 @@ class Lut3dEntity(Qt3DCore.QComponent):
         # if datetime.now() - self.time_last_change > self.timedelta_update:
         #     self.time_last_change = datetime.now()
 
+    @QtCore.Slot()
+    def select_nodes_by_source_colour_affecting(self, colour_float: QVector3D, expand_selection):
+        nodes = self.find_nodes_influencing_pixel(colour_float)
+
+        self.select_nodes(nodes, expand_selection, False)
+
+    @QtCore.Slot()
+    def select_nodes_by_source_colour_closest(self, colour_float: QVector3D, expand_selection):
+        node = self.find_nearest_node_pixel(colour_float)
+
+        self.select_nodes([node], expand_selection, False)
+
     @QtCore.Slot(tuple, QVector3D)
     def update_lut_node_changed(self, indices_node, coordinates_node):
         self.lut.table[indices_node] = np.asarray(coordinates_node.toTuple())
@@ -172,22 +222,26 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
     @QtCore.Slot()
     def slot_clicked(self, event):
-        entity: NodeLut = event.entity()
+        node: NodeLut = event.entity()
         modifiers = event.modifiers()
 
         if event.button() == Qt3DRender.QPickEvent.LeftButton and self.parent_gui.mode_transform_current is None:
-            if modifiers == Qt3DRender.QPickEvent.ShiftModifier or modifiers == Qt3DRender.QPickEvent.ShiftModifier + Qt3DRender.QPickEvent.ControlModifier:
-                entity.select(not entity.is_selected)
-            else:
-                fn = lambda node: node.select(not node.is_selected and node is entity)
-                self.iter_nodes(fn)
-                # for nodes_r in self.nodes_lut:
-                #     for nodes_g in nodes_r:
-                #         for node in nodes_g:
-                #             node.select(not node.is_selected and node is entity)
+            self.select_nodes(
+                [node],
+                modifiers == Qt3DRender.QPickEvent.ShiftModifier
+                or modifiers == Qt3DRender.QPickEvent.ShiftModifier + Qt3DRender.QPickEvent.ControlModifier,
+                True
+            )
 
     def iter_nodes(self, fn, *args, **kwargs):
         for nodes_r in self.nodes_lut:
             for nodes_g in nodes_r:
                 for node in nodes_g:
                     fn(node, *args, **kwargs)
+
+    def select_nodes(self, nodes, expand_selection, deselect_selected):
+        if expand_selection:
+            [node.select(not node.is_selected or not deselect_selected) for node in nodes]
+        else:
+            fn = lambda node: node.select((not node.is_selected or not deselect_selected) and node in nodes)
+            self.iter_nodes(fn)

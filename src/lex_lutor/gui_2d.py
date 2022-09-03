@@ -15,6 +15,18 @@ import sys
 # TODO: Async LUT trafo!
 #   See https://realpython.com/python-pyqt-qthread/
 
+class LabelClickable(QtWidgets.QLabel):
+    double_clicked = Signal(QtGui.QMouseEvent)
+
+    def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent) -> None:
+        self.double_clicked.emit(event)
+
+class LabelClickable(QtWidgets.QLabel):
+    double_clicked = Signal(QtGui.QMouseEvent)
+
+    def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent) -> None:
+        self.double_clicked.emit(event)
+
 class WorkerLut(QObject):
     finished = Signal(QtGui.QImage)
     progress = Signal(int)
@@ -44,11 +56,11 @@ class WorkerLut(QObject):
         return qimage
 
 class MenuWidget(QtWidgets.QWidget):
+    select_nodes_affecting_pixel = Signal(QVector3D, bool)
+    select_node_closest_pixel = Signal(QVector3D, bool)
+
     def __init__(self, parent=None):
         super(MenuWidget, self).__init__(parent)
-        # self.worker_image.progress.connect(self.reportProgress)
-
-        button_test = QPushButton('test')
         button_test2 = QPushButton('test2')
 
         self.thread_image = None
@@ -58,13 +70,17 @@ class MenuWidget(QtWidgets.QWidget):
 
         self.threads_image: [QtCore.QThread, QtCore.QObject] = []
 
-        self.label_image = QtWidgets.QLabel()
-        self.img_base = cv2.resize(colour.io.read_image(
+        self.label_image = LabelClickable()
+        image = colour.io.read_image(
             '/home/bjoern/PycharmProjects/darktabe_hald_generator/samples/provia/DSCF0326.JPG'
-        ), (600, 800))
+        )
+        aspect = image.shape[0] / image.shape[1]
+        width = 400
+        height = int(width * aspect)
+        self.img_base = cv2.resize(image, (width, height))
         # TODO:Color management. https://doc.qt.io/qt-6/qcolorspace.html
         img_uint = (self.img_base*255).astype(np.uint8, order='c')
-        qimage =             QtGui.QImage(
+        qimage = QtGui.QImage(
                 img_uint,
                 self.img_base.shape[1],
                 self.img_base.shape[0],
@@ -81,6 +97,11 @@ class MenuWidget(QtWidgets.QWidget):
         layout.addWidget(button_test2)
 
         self.setLayout(layout)
+
+        self.label_image.double_clicked.connect(self.mouseDoubleClickEvent)
+
+
+        # self.mouseDoubleClickEvent.connect(self.image_double_clicked)
 
     # @QtCore.Slot(tuple, colour.LUT3D)
     # def slot_hover_node_stop(self, indices, lut):
@@ -105,6 +126,50 @@ class MenuWidget(QtWidgets.QWidget):
     #
     #     # render
     #     print('started hover')
+
+    # @QtCore.Slot(QtGui.QMouseEvent)
+    def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent) -> None:
+        # TODO / FIXME: When proper image display scaling is implemented,
+        #   the coords do not correspond to pixel coords directly anymore (maybe the don't even nof with display scaling?)
+        #   hence, transorfmation must be performed. Is this done using qpainter?
+        #
+
+        # Fixme: Not possible to get relative position in widget?
+        pos_image = self.label_image.pos()
+        pos_image = self.label_image.mapFromParent(self.label_image.pos())
+        print(pos_image)
+
+        pos_pixel = [
+            event.y() - pos_image.y(),
+            event.x() - pos_image.x(),
+        ]
+
+
+
+        print(pos_pixel)
+
+        pixel_image = self.img_base[
+            pos_pixel[0],
+            pos_pixel[1]
+
+        ]
+
+        # TODO: STRG makes only one
+        expand_selection = event.modifiers() in (
+            QtCore.Qt.Modifier.SHIFT,
+            QtCore.Qt.Modifier.SHIFT + QtCore.Qt.Modifier.CTRL,
+        )
+        select_closest = event.modifiers() in (
+            QtCore.Qt.Modifier.CTRL,
+            QtCore.Qt.Modifier.SHIFT + QtCore.Qt.Modifier.CTRL,
+        )
+
+
+        # image is float, so pixel is coords.
+        if select_closest:
+            self.select_node_closest_pixel.emit(QVector3D(*pixel_image), expand_selection)
+        else:
+            self.select_nodes_affecting_pixel.emit(QVector3D(*pixel_image), expand_selection)
 
     @QtCore.Slot(QtGui.QImage)
     def update_image_async(self, image_updated):
