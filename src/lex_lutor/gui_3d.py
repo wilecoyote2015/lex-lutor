@@ -108,6 +108,9 @@ class CubeView(Qt3DExtras.Qt3DWindow):
         if key == QtCore.Qt.Key_Enter:
             self.mode_transform_current = None
             self.accept_transform.emit()
+        if key == QtCore.Qt.Key_N and self.mode_transform_current is None:
+            self.entity_lut.reset_selected_nodes()
+
         elif key in color_spaces_components_transform:
             # TODO: Better send signals to start and stop transform?
             self.mode_transform_current = key
@@ -126,7 +129,7 @@ class CubeView(Qt3DExtras.Qt3DWindow):
         # TODO: trigger transform slot of all selected nodes (and later those that are in smooth transform radius)
         if self.mode_transform_current is not None:
             screen_size = self.screen().size()
-            distance = (self.coordinates_mouse_event_start.x() - event.x()) / screen_size.width() * 2
+            distance = (self.coordinates_mouse_event_start.x() - event.x()) / screen_size.width() * 5
             self.entity_lut.transform_dragging(self.mode_transform_current, distance)
 
 

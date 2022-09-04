@@ -197,29 +197,6 @@ class Lut3dEntity(Qt3DCore.QComponent):
     def slot_stop_preview_weights(self, indices_node):
         if indices_node == self.indices_node_preview_current:
             self.stop_preview_weights.emit(self.lut)
-    #
-    # @QtCore.Slot()
-    # def slot_start_preview_weights(self, event):
-    #     node = event.entity
-    #     indices_node = node.indices_lut
-    #
-    #     if self.parent_gui.mode_transform_current is None:
-    #         lut_use = colour.LUT3D(
-    #             colour.LUT3D.linear_table(self.lut.size) ** 2
-    #         )
-    #
-    #         lut_use.table = np.tile(np.mean(self.lut.table, axis=3)[..., np.newaxis], (1, 1, 1, 3))
-    #         lut_use.table[indices_node] = [1., 0., 0.]
-    #
-    #         modifiers = QGuiApplication.keyboardModifiers()
-    #         if modifiers in (QtCore.Qt.Modifier.CTRL, QtCore.Qt.Modifier.CTRL + QtCore.Qt.Modifier.SHIFT ):
-    #             def fn(node: NodeLut):
-    #                 if node.is_selected:
-    #                     lut_use.table[node.indices_lut] = [1., 0., 0.]
-    #             self.iter_nodes(fn)
-    #
-    #         print('start')
-    #         self.start_preview_weights.emit(lut_use)
 
     @QtCore.Slot(int, float)
     def transform_dragging(self, mode, distance):
@@ -236,6 +213,19 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
         # if datetime.now() - self.time_last_change > self.timedelta_update:
         #     self.time_last_change = datetime.now()
+
+    @QtCore.Slot()
+    def reset_selected_nodes(self):
+        def fn(node: NodeLut):
+            # TODO: currently, coords are reset to state where lut is loaded.
+            #   reset to neutral color insted?
+            if node.is_selected:
+                node.transform.setTranslation(node.coordinates_reset)
+                node.accept_transform()
+
+        # fn = node.
+        self.iter_nodes(fn)
+        self.lut_changed.emit(self.lut)
 
     @QtCore.Slot()
     def select_nodes_by_source_colour_affecting(self, colour_float: QVector3D, expand_selection):

@@ -24,8 +24,38 @@ class LabelClickable(QtWidgets.QLabel):
 class LabelClickable(QtWidgets.QLabel):
     double_clicked = Signal(QtGui.QMouseEvent)
 
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        sizePolicy = QtWidgets.QSizePolicy(
+            QtWidgets.QSizePolicy.Fixed,
+            QtWidgets.QSizePolicy.Fixed,
+        )
+        sizePolicy.setHeightForWidth(True)
+        self.setSizePolicy(sizePolicy)
+
+    def hasHeightForWidth(self) -> bool:
+        return True
+
     def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent) -> None:
         self.double_clicked.emit(event)
+
+    def heightForWidth(self, width: int) -> int:
+        # FIXME: does not work somehow.
+        aspect_pixmap = self.pixmap().height() / self.pixmap().width()
+
+        # return int(width * aspect_pixmap)
+        return aspect_pixmap * width
+
+
+
+# class BoxWLabel(QtWidgets.QWidget):
+#     def __init__(self, label, parent=None):
+#         super().__init__(parent)
+#
+#         layout = QtWidgets.QBoxLayout()
+#
+#         self.setLayout(layout)
 
 class WorkerLut(QObject):
     finished = Signal(QtGui.QImage, str)
@@ -63,11 +93,11 @@ class MenuWidget(QtWidgets.QWidget):
         super(MenuWidget, self).__init__(parent)
         button_test2 = QPushButton('test2')
 
-        self.threads_image = []
 
-        self.threads_image: [QtCore.QThread, QtCore.QObject] = []
+        self.queue_updates_image: [QtCore.QThread, QtCore.QObject, str] = []
 
         self.label_image = LabelClickable()
+        self.label_image.setScaledContents(True)
         image = colour.io.read_image(
             '/home/bjoern/PycharmProjects/darktabe_hald_generator/samples/provia/DSCF0326.JPG'
         )
@@ -91,6 +121,7 @@ class MenuWidget(QtWidgets.QWidget):
 
         layout = QVBoxLayout()
         layout.addWidget(self.label_image)
+        # layout.addStretch(2)
         layout.addWidget(button_test2)
 
         self.setLayout(layout)
@@ -170,56 +201,64 @@ class MenuWidget(QtWidgets.QWidget):
 
     @QtCore.Slot(QtGui.QImage, int)
     def update_image_async(self, image_updated, id_worker):
-        if id_worker == self.threads_image[-1][-1]:
-            self.label_image.setPixmap(
-                QtGui.QPixmap(image_updated)
-            )
+        # if id_worker == self.queue_updates_image[-1][-1]:
+        self.label_image.setPixmap(
+            QtGui.QPixmap(image_updated)
+        )
 
-    @QtCore.Slot()
-    def start_update_image_waiting(self):
-        if self.thread_image_waiting is not None and self.worker_image_waiting is not None:
-            self.thread_image.start()
-
-    def clean_threads(self):
+    def clean_queue(self):
         # TODO: does this intruduce a memory leak?
+        # TODO: delete all threads before running and after running that are not the latest
 
-        threads_new = []
-        for thread, worker, id_worker in self.threads_image:
+        queue_new = []
+        for thread, worker, id_worker in self.queue_updates_image:
             try:
                 finished = thread.isFinished()
             except RuntimeError:
                 continue
 
             if not finished:
-                threads_new.append((thread, worker, id_worker))
+                queue_new.append((thread, worker, id_worker))
 
-        self.threads_image = threads_new
+        self.queue_updates_image = queue_new
 
         # self.threads_image = [t for t in self.threads_image if t[0] and not t[0].isFinished()]
+
+    @QtCore.Slot()
+    def start_next_update(self):
+        self.queue_updates_image = self.queue_updates_image[-1:] if self.queue_updates_image else []
+        if self.queue_updates_image:
+            self.queue_updates_image[-1][0].start()
 
     @QtCore.Slot(colour.LUT3D)
     def start_update_image(self, lut):
         print('start')
-        self.clean_threads()
+        # self.clean_queue()
 
-        if self.threads_image:
-            for thread, worker, id_worker in self.threads_image:
-                try:
-                    worker.finished.disconnect(self.start_update_image_waiting)
-                except RuntimeError:
-                    pass
+        # TODO: quit running thread.
 
-                thread.terminate()
+        # if self.threads_image:
+        #     for thread, worker, id_worker in self.threads_image:
+        #         try:
+        #             worker.finished.disconnect(self.start_update_image_waiting)
+        #         except RuntimeError:
+        #             pass
+        #
+        #         thread.terminate()
 
         thread, worker = QtCore.QThread(), WorkerLut(self.img_base, lut)
-        self.threads_image.append((thread, worker, str(id(worker))))
+        self.queue_updates_image.append((thread, worker, str(id(worker))))
         
         worker.moveToThread(thread)
         worker.finished.connect(thread.quit)
-        worker.finished.connect(worker.deleteLater)
+        # worker.finished.connect(worker.deleteLater)
         worker.finished.connect(self.update_image_async)
-        thread.finished.connect(thread.deleteLater)
+        # thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self.start_next_update)
         thread.started.connect(worker.run)
 
+        if len(self.queue_updates_image) == 1:
+            self.start_next_update()
 
-        self.threads_image[-1][0].start()
+
+        # self.threads_image[-1][0].start()

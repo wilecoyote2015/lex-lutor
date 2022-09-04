@@ -33,6 +33,7 @@ class NodeLut(Qt3DCore.QEntity):
 
         # Those coordinates are kept during ongoing transformation until transformation is finished
         self.coordinates_current = coordinates_target
+        self.coordinates_reset = coordinates_target
         self.coordinates_source = coordinates_source
 
         self.transform = Qt3DCore.QTransform(translation=coordinates_target)
@@ -122,6 +123,7 @@ class NodeLut(Qt3DCore.QEntity):
                 print(coords_new_target_space.x())
                 coords_new_target_space.setX(np.mod(coords_new_target_space.x(), 1.))
             elif color_space_transform == HCL and dimension_transform == 1:
+                print(coords_new_target_space)
                 coords_new_target_space.setY(np.clip(coords_new_target_space.y(), 0, 2/3))
             elif color_space_transform == HSL and dimension_transform == 2:
                 coords_new_target_space.setZ(self.clip_l(*coords_new_target_space.toTuple()))
