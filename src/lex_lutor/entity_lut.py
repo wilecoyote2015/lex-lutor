@@ -34,6 +34,7 @@ from datetime import datetime, timedelta
 class Lut3dEntity(Qt3DCore.QComponent):
     lut_changed = QtCore.Signal(colour.LUT3D)
     start_preview_weights = QtCore.Signal(colour.LUT3D)
+    stop_preview_weights = QtCore.Signal(colour.LUT3D)
 
     def __init__(self, lut, parent_gui):
         super().__init__()
@@ -44,9 +45,12 @@ class Lut3dEntity(Qt3DCore.QComponent):
         self.nodes_lut = None
         self.color_space: colour.models.RGB_Colourspace = None
 
+        self.indices_node_preview_current = None
+
         self.load_lut(lut)
 
         self.start_preview_weights.connect(self.parent_gui.gui_parent.widget_menu.start_update_image)
+        self.stop_preview_weights.connect(self.parent_gui.gui_parent.widget_menu.start_update_image)
 
         self.parent_gui.gui_parent.widget_menu.select_nodes_affecting_pixel.connect(self.select_nodes_by_source_colour_affecting)
         self.parent_gui.gui_parent.widget_menu.select_node_closest_pixel.connect(self.select_nodes_by_source_colour_closest)
@@ -57,6 +61,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
         # TODO: find a better way to block lut calc....
         #   use qtimer as long as dragging, so that update is performed on regular intervals?
 
+        # self.picker.entered.connect(self.slot_start_preview_weights)
 
         # self.root_entity = None
 
@@ -154,7 +159,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
                     # entity_node.mouse_hover_start.connect()
                     entity_node.mouse_hover_start.connect(self.slot_start_preview_weights)
-                    entity_node.mouse_hover_stop.connect(self.parent_gui.gui_parent.widget_menu.start_update_image)
+                    entity_node.mouse_hover_stop.connect(self.slot_stop_preview_weights)
 
 
 
@@ -185,7 +190,36 @@ class Lut3dEntity(Qt3DCore.QComponent):
                 self.iter_nodes(fn)
 
             print('start')
+            self.indices_node_preview_current = indices_node
             self.start_preview_weights.emit(lut_use)
+
+    @QtCore.Slot(tuple)
+    def slot_stop_preview_weights(self, indices_node):
+        if indices_node == self.indices_node_preview_current:
+            self.stop_preview_weights.emit(self.lut)
+    #
+    # @QtCore.Slot()
+    # def slot_start_preview_weights(self, event):
+    #     node = event.entity
+    #     indices_node = node.indices_lut
+    #
+    #     if self.parent_gui.mode_transform_current is None:
+    #         lut_use = colour.LUT3D(
+    #             colour.LUT3D.linear_table(self.lut.size) ** 2
+    #         )
+    #
+    #         lut_use.table = np.tile(np.mean(self.lut.table, axis=3)[..., np.newaxis], (1, 1, 1, 3))
+    #         lut_use.table[indices_node] = [1., 0., 0.]
+    #
+    #         modifiers = QGuiApplication.keyboardModifiers()
+    #         if modifiers in (QtCore.Qt.Modifier.CTRL, QtCore.Qt.Modifier.CTRL + QtCore.Qt.Modifier.SHIFT ):
+    #             def fn(node: NodeLut):
+    #                 if node.is_selected:
+    #                     lut_use.table[node.indices_lut] = [1., 0., 0.]
+    #             self.iter_nodes(fn)
+    #
+    #         print('start')
+    #         self.start_preview_weights.emit(lut_use)
 
     @QtCore.Slot(int, float)
     def transform_dragging(self, mode, distance):
