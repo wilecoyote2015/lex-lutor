@@ -183,7 +183,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
             lut_use.table[indices_node] = [1., 0., 0.]
 
             modifiers = QGuiApplication.keyboardModifiers()
-            if modifiers in (QtCore.Qt.Modifier.CTRL, QtCore.Qt.Modifier.CTRL + QtCore.Qt.Modifier.SHIFT ):
+            if modifiers == QtCore.Qt.Modifier.SHIFT:
                 def fn(node: NodeLut):
                     if node.is_selected:
                         lut_use.table[node.indices_lut] = [1., 0., 0.]

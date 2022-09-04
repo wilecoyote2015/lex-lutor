@@ -199,6 +199,7 @@ class MenuWidget(QtWidgets.QWidget):
 
     @QtCore.Slot(colour.LUT3D)
     def start_update_image(self, lut):
+        print('start')
         self.clean_threads()
 
         if self.threads_image:
