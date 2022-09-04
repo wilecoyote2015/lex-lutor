@@ -77,6 +77,9 @@ class NodeLut(Qt3DCore.QEntity):
 
         self.picker = Qt3DRender.QObjectPicker(self.parentEntity())
         self.addComponent(self.picker)
+
+        # FIXME: Problem: on quick transition between two nodes, left of previously hovered is always fired after entered
+        #   of next one...
         self.picker.exited.connect(self.emit_mouse_hover_stop)
         self.picker.entered.connect(self.emit_mouse_hover_start)
         # self.picker.clicked.connect(self.parentEntity().slot_clicked)
@@ -285,9 +288,11 @@ class NodeLut(Qt3DCore.QEntity):
 
     @QtCore.Slot()
     def emit_mouse_hover_stop(self):
+        print(f'left {self.indices_lut}')
         self.mouse_hover_stop.emit(self.lut_parent.lut)
 
     @QtCore.Slot()
     def emit_mouse_hover_start(self):
+        print(f'Entered {self.indices_lut}')
         self.mouse_hover_start.emit(self.indices_lut)
 

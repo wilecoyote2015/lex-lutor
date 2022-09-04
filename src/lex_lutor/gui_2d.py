@@ -28,7 +28,7 @@ class LabelClickable(QtWidgets.QLabel):
         self.double_clicked.emit(event)
 
 class WorkerLut(QObject):
-    finished = Signal(QtGui.QImage)
+    finished = Signal(QtGui.QImage, str)
     progress = Signal(int)
 
     def __init__(self, image: np.ndarray, lut: colour.LUT3D, *args, **kwargs):
@@ -51,7 +51,7 @@ class WorkerLut(QObject):
             QtGui.QImage.Format_RGB888
         )
 
-        self.finished.emit(qimage)
+        self.finished.emit(qimage, str(id(self)))
 
         return qimage
 
@@ -63,10 +63,7 @@ class MenuWidget(QtWidgets.QWidget):
         super(MenuWidget, self).__init__(parent)
         button_test2 = QPushButton('test2')
 
-        self.thread_image = None
-        self.thread_image_waiting = None
-        self.worker_image = None
-        self.worker_image_waiting = None
+        self.threads_image = []
 
         self.threads_image: [QtCore.QThread, QtCore.QObject] = []
 
@@ -171,19 +168,12 @@ class MenuWidget(QtWidgets.QWidget):
         else:
             self.select_nodes_affecting_pixel.emit(QVector3D(*pixel_image), expand_selection)
 
-    @QtCore.Slot(QtGui.QImage)
-    def update_image_async(self, image_updated):
-        self.label_image.setPixmap(
-            QtGui.QPixmap(image_updated)
-        )
-
-        # if thread is None, the worker was worker_waiting
-        if self.thread_image is None:
-            self.worker_image_waiting = None
-            self.thread_image_waiting = None
-
-        self.thread_image = None
-        self.worker_image = None
+    @QtCore.Slot(QtGui.QImage, int)
+    def update_image_async(self, image_updated, id_worker):
+        if id_worker == self.threads_image[-1][-1]:
+            self.label_image.setPixmap(
+                QtGui.QPixmap(image_updated)
+            )
 
     @QtCore.Slot()
     def start_update_image_waiting(self):
@@ -194,14 +184,14 @@ class MenuWidget(QtWidgets.QWidget):
         # TODO: does this intruduce a memory leak?
 
         threads_new = []
-        for thread, worker in self.threads_image:
+        for thread, worker, id_worker in self.threads_image:
             try:
                 finished = thread.isFinished()
             except RuntimeError:
                 continue
 
             if not finished:
-                threads_new.append((thread, worker))
+                threads_new.append((thread, worker, id_worker))
 
         self.threads_image = threads_new
 
@@ -212,7 +202,7 @@ class MenuWidget(QtWidgets.QWidget):
         self.clean_threads()
 
         if self.threads_image:
-            for thread, worker in self.threads_image:
+            for thread, worker, id_worker in self.threads_image:
                 try:
                     worker.finished.disconnect(self.start_update_image_waiting)
                 except RuntimeError:
@@ -220,14 +210,15 @@ class MenuWidget(QtWidgets.QWidget):
 
                 thread.terminate()
 
-
-        self.threads_image.append((QtCore.QThread(), WorkerLut(self.img_base, lut)))
-        self.threads_image[-1][1].moveToThread(self.threads_image[-1][0])
-        self.threads_image[-1][1].finished.connect(self.threads_image[-1][0].quit)
-        self.threads_image[-1][1].finished.connect(self.threads_image[-1][1].deleteLater)
-        self.threads_image[-1][1].finished.connect(self.update_image_async)
-        self.threads_image[-1][0].finished.connect(self.threads_image[-1][0].deleteLater)
-        self.threads_image[-1][0].started.connect(self.threads_image[-1][1].run)
+        thread, worker = QtCore.QThread(), WorkerLut(self.img_base, lut)
+        self.threads_image.append((thread, worker, str(id(worker))))
+        
+        worker.moveToThread(thread)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        worker.finished.connect(self.update_image_async)
+        thread.finished.connect(thread.deleteLater)
+        thread.started.connect(worker.run)
 
 
         self.threads_image[-1][0].start()
