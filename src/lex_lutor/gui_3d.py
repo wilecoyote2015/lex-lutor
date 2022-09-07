@@ -78,6 +78,11 @@ class CubeView(Qt3DExtras.Qt3DWindow):
 
         self.entity_lut: Lut3dEntity = None
 
+        self.distance_last = None
+
+        self.cancel_transform.connect(self.end_transform)
+        self.accept_transform.connect(self.end_transform)
+
         self.modes_transform = (
             QtCore.Qt.Key_R,
             QtCore.Qt.Key_G,
@@ -97,19 +102,25 @@ class CubeView(Qt3DExtras.Qt3DWindow):
     # def mousePressEvent(self, event: Qt3DInput.QMouseEvent) -> None:
     #     print(event.button())
 
+    @QtCore.Slot()
+    def end_transform(self):
+        self.mode_transform_current = None
+        self.distance_last = None
+
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
         # TODO: cancel etc. must be invoked by proper signals that are emitted here.
         # TODO: Better move all this to entity_lut to reduce complexity
         key = event.key()
 
         if key == QtCore.Qt.Key_Escape:
-            self.mode_transform_current = None
             self.cancel_transform.emit()
         if key == QtCore.Qt.Key_Enter:
-            self.mode_transform_current = None
             self.accept_transform.emit()
         if key == QtCore.Qt.Key_N and self.mode_transform_current is None:
+            # TODO: use signal
             self.entity_lut.reset_selected_nodes()
+        if key == QtCore.Qt.Key_A and event.modifiers() == QtCore.Qt.Modifier.SHIFT:
+            self.entity_lut.toggle_select_all()
 
         elif key in color_spaces_components_transform:
             # TODO: Better send signals to start and stop transform?
@@ -119,10 +130,8 @@ class CubeView(Qt3DExtras.Qt3DWindow):
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         if self.mode_transform_current is not None:
             if event.button() == QtGui.Qt.MouseButton.LeftButton:
-                self.mode_transform_current = None
                 self.accept_transform.emit()
             elif event.button() == QtGui.Qt.MouseButton.RightButton:
-                self.mode_transform_current = None
                 self.cancel_transform.emit()
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
@@ -130,7 +139,9 @@ class CubeView(Qt3DExtras.Qt3DWindow):
         if self.mode_transform_current is not None:
             screen_size = self.screen().size()
             distance = (self.coordinates_mouse_event_start.x() - event.x()) / screen_size.width() * 5
-            self.entity_lut.transform_dragging(self.mode_transform_current, distance)
+            if distance != self.distance_last:
+                self.distance_last = distance
+                self.entity_lut.transform_dragging(self.mode_transform_current, distance)
 
 
 

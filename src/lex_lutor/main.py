@@ -33,10 +33,14 @@ if __name__ == '__main__':
 
     w = MainWidget()
 
-    lut = colour.LUT3D(colour.LUT3D.linear_table(5))
+    lut = colour.io.read_LUT('/home/bjoern/Pictures/hald-clut/HaldCLUT/own/provia_profiled_xt3.cube')
+
+    path_image = '/home/bjoern/PycharmProjects/darktabe_hald_generator/samples/provia/DSCF0326.JPG'
+
+    # lut = colour.LUT3D(colour.LUT3D.linear_table(5))
     w.window_3d.load_lut(lut)
     w.window_3d.entity_lut.color_space = colour.models.RGB_COLOURSPACE_ADOBE_RGB1998
-
+    w.widget_menu.load_image(path_image, lut)
 
     # w.show()
     # w.resize(1200, 800)

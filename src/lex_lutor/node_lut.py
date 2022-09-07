@@ -92,8 +92,8 @@ class NodeLut(Qt3DCore.QEntity):
 
     @QtCore.Slot(int, float, float)
     def transform_dragging(self, mode, distance, weight):
-        # TODO: always clip to domain: Value must be stuck at domain border,
-        #   so one must find the point in movement path where at border.
+        # TODO: Transform must be calculated here in vectorized form for all selected nodes.
+        #   Calculating per node is too slow.
 
         # TODO: Exposure. For this, first transformation must be into linear RGB.
         #   But how is exposure calculated then? Effect of exposure must not depend on linear color space
@@ -118,12 +118,12 @@ class NodeLut(Qt3DCore.QEntity):
 
             components_vector_add = [1. if idx_ == dimension_transform else 0. for idx_ in range(3)]
             coords_new_target_space = coords_current_target_space + QVector3D(*components_vector_add) * distance_weighted
-            print(coords_new_target_space.toTuple())
+            # print(coords_new_target_space.toTuple())
             if color_space_transform in (HSV, HSL, HCL) and dimension_transform == 0:
-                print(coords_new_target_space.x())
+                # print(coords_new_target_space.x())
                 coords_new_target_space.setX(np.mod(coords_new_target_space.x(), 1.))
             elif color_space_transform == HCL and dimension_transform == 1:
-                print(coords_new_target_space)
+                # print(coords_new_target_space)
                 coords_new_target_space.setY(np.clip(coords_new_target_space.y(), 0, 2/3))
             elif color_space_transform == HSL and dimension_transform == 2:
                 coords_new_target_space.setZ(self.clip_l(*coords_new_target_space.toTuple()))
@@ -250,6 +250,7 @@ class NodeLut(Qt3DCore.QEntity):
         return np.clip(l, lower, upper)
 
     def transform_color_space(self, color_space_source, color_space_target, value_input: QVector3D):
+        # TODO: ensuse vectorization (value_input must be ndarray) and move to entity_lut.
         if color_space_target == color_space_source or color_space_target is None or color_space_source is None:
             return value_input
 
@@ -290,11 +291,11 @@ class NodeLut(Qt3DCore.QEntity):
 
     @QtCore.Slot()
     def emit_mouse_hover_stop(self):
-        print(f'left {self.indices_lut}')
+        # print(f'left {self.indices_lut}')
         self.mouse_hover_stop.emit(self.indices_lut)
 
     @QtCore.Slot()
     def emit_mouse_hover_start(self):
-        print(f'Entered {self.indices_lut}')
+        # print(f'Entered {self.indices_lut}')
         self.mouse_hover_start.emit(self.indices_lut)
 

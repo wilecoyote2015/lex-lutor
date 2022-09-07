@@ -11,15 +11,27 @@ from PySide6.Qt3DRender import Qt3DRender
 # from PySide6 import Qt3DCore, Qt3DExtras, Qt3DInput, Qt3DRender
 import cv2
 import sys
+from tqdm import tqdm
+from scipy.sparse import csc_matrix
 
 # TODO: Async LUT trafo!
 #   See https://realpython.com/python-pyqt-qthread/
+
+INTER_TRILINEAR = 'Trilinear'
+INTER_TETRAHEDRAL = 'Tetrahedral'
+
+INTERPOLATORS = {
+    INTER_TRILINEAR: colour.algebra.table_interpolation_trilinear,
+    INTER_TETRAHEDRAL: colour.algebra.table_interpolation_tetrahedral,
+}
+
 
 class LabelClickable(QtWidgets.QLabel):
     double_clicked = Signal(QtGui.QMouseEvent)
 
     def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent) -> None:
         self.double_clicked.emit(event)
+
 
 class LabelClickable(QtWidgets.QLabel):
     double_clicked = Signal(QtGui.QMouseEvent)
@@ -49,14 +61,6 @@ class LabelClickable(QtWidgets.QLabel):
 
 
 
-# class BoxWLabel(QtWidgets.QWidget):
-#     def __init__(self, label, parent=None):
-#         super().__init__(parent)
-#
-#         layout = QtWidgets.QBoxLayout()
-#
-#         self.setLayout(layout)
-
 class WorkerLut(QObject):
     finished = Signal(QtGui.QImage, str)
     progress = Signal(int)
@@ -66,8 +70,6 @@ class WorkerLut(QObject):
 
         self.image = image
         self.lut = lut
-
-
 
     def run(self, ):
         """Long-running task."""
@@ -91,33 +93,14 @@ class MenuWidget(QtWidgets.QWidget):
 
     def __init__(self, parent=None):
         super(MenuWidget, self).__init__(parent)
+        self.interpolation_matrix = None
         button_test2 = QPushButton('test2')
-
 
         self.queue_updates_image: [QtCore.QThread, QtCore.QObject, str] = []
 
         self.label_image = LabelClickable()
         self.label_image.setScaledContents(True)
-        image = colour.io.read_image(
-            '/home/bjoern/PycharmProjects/darktabe_hald_generator/samples/provia/DSCF0326.JPG'
-        )
-        aspect = image.shape[0] / image.shape[1]
-        width = 400
-        height = int(width * aspect)
-        self.img_base = cv2.resize(image, (width, height))
-        # TODO:Color management. https://doc.qt.io/qt-6/qcolorspace.html
-        img_uint = (self.img_base*255).astype(np.uint8, order='c')
-        qimage = QtGui.QImage(
-                img_uint,
-                self.img_base.shape[1],
-                self.img_base.shape[0],
-                self.img_base.shape[1]*3,
-                QtGui.QImage.Format_RGB888
-            )
-        self.label_image.setPixmap(
-            QtGui.QPixmap(qimage)
-
-        )
+        self.img_base = None
 
         layout = QVBoxLayout()
         layout.addWidget(self.label_image)
@@ -128,32 +111,74 @@ class MenuWidget(QtWidgets.QWidget):
 
         self.label_image.double_clicked.connect(self.mouseDoubleClickEvent)
 
+    @QtCore.Slot(str)
+    def load_image(self, path_image, lut):
+        image = colour.io.read_image(
+            path_image
+        )
+        aspect = image.shape[0] / image.shape[1]
+        width = 400
+        height = int(width * aspect)
+        self.img_base = cv2.resize(image, (width, height))
+        # TODO:Color management. https://doc.qt.io/qt-6/qcolorspace.html
+        img_uint = (self.img_base * 255).astype(np.uint8, order='c')
+        qimage = QtGui.QImage(
+            img_uint,
+            self.img_base.shape[1],
+            self.img_base.shape[0],
+            self.img_base.shape[1] * 3,
+            QtGui.QImage.Format_RGB888
+        )
+        self.label_image.setPixmap(
+            QtGui.QPixmap(qimage)
 
-        # self.mouseDoubleClickEvent.connect(self.image_double_clicked)
+        )
 
-    # @QtCore.Slot(tuple, colour.LUT3D)
-    # def slot_hover_node_stop(self, indices, lut):
-    #     print('stopped hover')
-    #     # FIXME: This destroys update on dragging
-    #     # self.start_update_image(lut)
+        # TODO: handle case that no lut loaded.
+        # TODO: Interpolation from app
+        # self.make_interpolation_matrix(lut, INTER_TRILINEAR)
 
-    # @QtCore.Slot(tuple, QVector3D, colour.LUT3D)
-    # def slot_hover_node_start(self, indices, coordinates, lut):
-    #     # Make empty LUT of size
-    #     # TODO: handle domain!
-    #     lut_use = colour.LUT3D(
-    #         colour.LUT3D.linear_table(lut.size)
-    #     )
-    #
-    #     lut_use.table = np.mean(lut_use.table, axis=3)[..., np.newaxis]
-    #     lut_use.table[lut.indices] = [1., 0., 0.]
-    #
-    #     self.start_update_image()
-    #
-    #     # Make selected red
-    #
-    #     # render
-    #     print('started hover')
+    @QtCore.Slot()
+    def make_interpolation_matrix(self, lut, interpolation):
+        if interpolation not in INTERPOLATORS:
+            raise ValueError(f'Interpolation {interpolation} not supported.')
+        # feature matrix with order of permutation: r, g, b
+
+        pixels = self.img_base.reshape((self.img_base.shape[0] * self.img_base.shape[1], self.img_base.shape[2]))
+        print('generating design matrix')
+        # design_matrix_new = np.zeros((pixels_references.shape[0], size * size * size), pixels_references.dtype)
+        data = np.ndarray((0,), dtype=pixels.dtype)
+        indices_rows = np.ndarray((0,), dtype=int)
+        indices_columns = np.ndarray((0,), dtype=int)
+
+        lut_empty = colour.LUT3D(table=np.zeros((lut.size, lut.size, lut.size, 3), dtype=pixels.dtype), size=lut.size)
+        indices_pixels = np.arange(pixels.shape[0])
+
+        idx_col_design_matrix = 0
+        for idx_r in tqdm(range(lut.size)):
+            for idx_g in range(lut.size):
+                for idx_b in range(lut.size):
+                    lut_empty.table[idx_r, idx_g, idx_b] = 1.
+                    weights_pixels = lut_empty.apply(
+                        pixels,
+                        interpolator=INTERPOLATORS[interpolation]
+                    )[..., 0]
+                    bool_weights = weights_pixels != 0
+                    weights_pixels_non_zero = weights_pixels[bool_weights]
+                    data = np.concatenate((data, weights_pixels_non_zero))
+                    indices_rows = np.concatenate((indices_rows, indices_pixels[bool_weights]))
+                    indices_columns = np.concatenate(
+                        (indices_columns, np.full((weights_pixels_non_zero.shape[0],), idx_col_design_matrix)))
+                    lut_empty.table[idx_r, idx_g, idx_b] = 0.
+                    idx_col_design_matrix += 1
+
+        result = csc_matrix(
+            (data,
+             (indices_rows, indices_columns)),
+            shape=(pixels.shape[0], lut.size ** 3)
+        )
+
+        self.interpolation_matrix = result
 
     # @QtCore.Slot(QtGui.QMouseEvent)
     def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent) -> None:
@@ -163,18 +188,16 @@ class MenuWidget(QtWidgets.QWidget):
         #
 
         # Fixme: Not possible to get relative position in widget?
-        pos_image = self.label_image.pos()
+        # pos_image = self.label_image.pos()
         pos_image = self.label_image.mapFromParent(self.label_image.pos())
-        print(pos_image)
+        # print(pos_image)
 
         pos_pixel = [
             event.y() - pos_image.y(),
             event.x() - pos_image.x(),
         ]
 
-
-
-        print(pos_pixel)
+        # print(pos_pixel)
 
         pixel_image = self.img_base[
             pos_pixel[0],
@@ -232,7 +255,7 @@ class MenuWidget(QtWidgets.QWidget):
 
     @QtCore.Slot(colour.LUT3D)
     def start_update_image(self, lut):
-        print('start')
+        # print('start')
         # self.clean_queue()
 
         # TODO: quit running thread.

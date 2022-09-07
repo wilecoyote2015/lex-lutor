@@ -161,9 +161,6 @@ class Lut3dEntity(Qt3DCore.QComponent):
                     entity_node.mouse_hover_start.connect(self.slot_start_preview_weights)
                     entity_node.mouse_hover_stop.connect(self.slot_stop_preview_weights)
 
-
-
-
                     entity_node.position_changed.connect(self.update_lut_node_changed)
                     self.parent_gui.cancel_transform.connect(entity_node.cancel_transform)
                     self.parent_gui.accept_transform.connect(entity_node.accept_transform)
@@ -171,6 +168,8 @@ class Lut3dEntity(Qt3DCore.QComponent):
                 nodes_r.append(nodes_g)
             nodes_lut.append(nodes_r)
         self.nodes_lut = nodes_lut
+
+        self.lut_changed.emit(self.lut)
 
     @QtCore.Slot(tuple)
     def slot_start_preview_weights(self, indices_node):
@@ -189,7 +188,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
                         lut_use.table[node.indices_lut] = [1., 0., 0.]
                 self.iter_nodes(fn)
 
-            print('start')
+            # print('start')
             self.indices_node_preview_current = indices_node
             self.start_preview_weights.emit(lut_use)
 
@@ -197,6 +196,12 @@ class Lut3dEntity(Qt3DCore.QComponent):
     def slot_stop_preview_weights(self, indices_node):
         if indices_node == self.indices_node_preview_current:
             self.stop_preview_weights.emit(self.lut)
+
+    @QtCore.Slot()
+    def toggle_select_all(self):
+        some_nodes_selected = np.any(self.iter_nodes(lambda node: node.is_selected))
+
+        self.iter_nodes(lambda node: node.select(not some_nodes_selected))
 
     @QtCore.Slot(int, float)
     def transform_dragging(self, mode, distance):
@@ -208,6 +213,8 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
         # fn = node.
         self.iter_nodes(fn)
+
+        print(f'Move {distance}')
 
         self.lut_changed.emit(self.lut)
 
@@ -258,10 +265,16 @@ class Lut3dEntity(Qt3DCore.QComponent):
             )
 
     def iter_nodes(self, fn, *args, **kwargs):
+        results = []
         for nodes_r in self.nodes_lut:
+            results_r = []
             for nodes_g in nodes_r:
+                results_g = []
                 for node in nodes_g:
-                    fn(node, *args, **kwargs)
+                    results_g.append(fn(node, *args, **kwargs))
+                results_r.append(results_g)
+            results.append(results_r)
+        return results
 
     def select_nodes(self, nodes, expand_selection, deselect_selected):
         if expand_selection:
