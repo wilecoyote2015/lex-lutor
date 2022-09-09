@@ -8,11 +8,15 @@ from PySide6.Qt3DExtras import Qt3DExtras
 from PySide6.QtGui import (QGuiApplication, QMatrix4x4, QQuaternion, QVector3D)
 from PySide6.Qt3DInput import Qt3DInput
 from PySide6.Qt3DRender import Qt3DRender
+from lex_lutor.constants import HSV, HSL, HCL, color_spaces_components_transform, KEY_EXPOSURE
+from datetime import datetime
 
+from varname import nameof
 # from PySide6 import Qt3DCore, Qt3DExtras, Qt3DInput, Qt3DRender
 import sys
 from lex_lutor.node_lut import NodeLut
 from datetime import datetime, timedelta
+
 
 # TODO: Add transformation that corresponds to exposure.
 #   is there a transform function that transforms back to scene-referred linear space?
@@ -52,8 +56,12 @@ class Lut3dEntity(Qt3DCore.QComponent):
         self.start_preview_weights.connect(self.parent_gui.gui_parent.widget_menu.start_update_image)
         self.stop_preview_weights.connect(self.parent_gui.gui_parent.widget_menu.start_update_image)
 
-        self.parent_gui.gui_parent.widget_menu.select_nodes_affecting_pixel.connect(self.select_nodes_by_source_colour_affecting)
-        self.parent_gui.gui_parent.widget_menu.select_node_closest_pixel.connect(self.select_nodes_by_source_colour_closest)
+        self.parent_gui.gui_parent.widget_menu.select_nodes_affecting_pixel.connect(
+            self.select_nodes_by_source_colour_affecting)
+        self.parent_gui.gui_parent.widget_menu.select_node_closest_pixel.connect(
+            self.select_nodes_by_source_colour_closest)
+
+        self.preview_weights_on = False
 
         # self.time_last_change = datetime.now()
         # self.timedelta_update = timedelta(milliseconds=100)
@@ -83,7 +91,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
         max_distances = (self.lut.domain[1] - self.lut.domain[0]) / (self.lut.size - 1)
 
-        def fn(node: NodeLut):
+        def fn(node: NodeLut, result_):
             node_affects_pixel = np.all(
                 np.abs(
                     (node.coordinates_source - coordinates_pixel).toTuple()
@@ -100,7 +108,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
         distance_min = [np.inf]
         result = [None]
 
-        def fn(node: NodeLut):
+        def fn(node: NodeLut, result_):
             distance = coordinates_pixel.distanceToPoint(node.coordinates_source)
 
             if distance < distance_min[0]:
@@ -127,7 +135,6 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
         color_max= 255
         self.mesh_node = Qt3DExtras.QSphereMesh(rings=8, slices=8, radius=radius)
-
 
         nodes_lut = []
         for idx_r, value_r_source in enumerate(coordinates_r_source):
@@ -161,7 +168,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
                     entity_node.mouse_hover_start.connect(self.slot_start_preview_weights)
                     entity_node.mouse_hover_stop.connect(self.slot_stop_preview_weights)
 
-                    entity_node.position_changed.connect(self.update_lut_node_changed)
+                    # entity_node.position_changed.connect(self.update_lut_node_changed)
                     self.parent_gui.cancel_transform.connect(entity_node.cancel_transform)
                     self.parent_gui.accept_transform.connect(entity_node.accept_transform)
                     nodes_g.append(entity_node)
@@ -174,6 +181,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
     @QtCore.Slot(tuple)
     def slot_start_preview_weights(self, indices_node):
         if self.parent_gui.mode_transform_current is None:
+            self.preview_weights_on = True
             lut_use = colour.LUT3D(
                 colour.LUT3D.linear_table(self.lut.size) ** 2
             )
@@ -183,7 +191,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
             modifiers = QGuiApplication.keyboardModifiers()
             if modifiers == QtCore.Qt.Modifier.SHIFT:
-                def fn(node: NodeLut):
+                def fn(node: NodeLut, result_):
                     if node.is_selected:
                         lut_use.table[node.indices_lut] = [1., 0., 0.]
                 self.iter_nodes(fn)
@@ -194,36 +202,20 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
     @QtCore.Slot(tuple)
     def slot_stop_preview_weights(self, indices_node):
-        if indices_node == self.indices_node_preview_current:
-            self.stop_preview_weights.emit(self.lut)
+        if self.preview_weights_on:
+            if indices_node == self.indices_node_preview_current:
+                self.preview_weights_on = False
+                self.stop_preview_weights.emit(self.lut)
 
     @QtCore.Slot()
     def toggle_select_all(self):
-        some_nodes_selected = np.any(self.iter_nodes(lambda node: node.is_selected))
+        some_nodes_selected = np.any(self.iter_nodes(lambda node, result_: result_.append(node.is_selected)))
 
-        self.iter_nodes(lambda node: node.select(not some_nodes_selected))
-
-    @QtCore.Slot(int, float)
-    def transform_dragging(self, mode, distance):
-
-        def fn(node: NodeLut):
-            # TODO: calc weight based on selection center or something
-            if node.is_selected:
-                node.transform_dragging(mode, distance, 1.)
-
-        # fn = node.
-        self.iter_nodes(fn)
-
-        print(f'Move {distance}')
-
-        self.lut_changed.emit(self.lut)
-
-        # if datetime.now() - self.time_last_change > self.timedelta_update:
-        #     self.time_last_change = datetime.now()
+        self.iter_nodes(lambda node, _: node.select(not some_nodes_selected))
 
     @QtCore.Slot()
     def reset_selected_nodes(self):
-        def fn(node: NodeLut):
+        def fn(node: NodeLut, result_):
             # TODO: currently, coords are reset to state where lut is loaded.
             #   reset to neutral color insted?
             if node.is_selected:
@@ -233,6 +225,251 @@ class Lut3dEntity(Qt3DCore.QComponent):
         # fn = node.
         self.iter_nodes(fn)
         self.lut_changed.emit(self.lut)
+
+    def transform_color_space(self, color_space_source, color_space_target, input_array: np.ndarray):
+        # TODO: ensuse vectorization (value_input must be ndarray) and move to entity_lut.
+        if color_space_target == color_space_source or color_space_target is None or color_space_source is None:
+            return input_array
+
+        if color_space_source in (HSV, HSL, HCL):
+            if color_space_target in (HSV, HSL, HCL):
+                result = getattr(colour, f'{color_space_source}_to_{color_space_target}')(input_array)
+            elif isinstance(color_space_target, colour.models.RGB_Colourspace):
+                result = getattr(colour, f'{color_space_source}_to_RGB')(input_array)
+            else:
+                raise NotImplementedError
+        elif isinstance(color_space_source, colour.models.RGB_Colourspace):
+            if color_space_target in (HSV, HSL, HCL):
+                result = getattr(colour, f'RGB_to_{color_space_target}')(input_array)
+
+            elif isinstance(color_space_target, colour.models.RGB_Colourspace):
+                result = colour.RGB_to_RGB(input_array, color_space_source, color_space_target)
+            else:
+                raise NotImplementedError
+        else:
+            raise NotImplementedError
+
+        return result
+
+    @QtCore.Slot(int, float)
+    def transform_dragging(self, mode, distance):
+        # TODO: Performance! This should also be threaded and use quere, as many transforms are triggered during
+        #   dragging and block UI, especially if many nodes are selected.
+
+        # TODO: Transform must be calculated here in vectorized form for all selected nodes.
+        #   Calculating per node is too slow.
+
+        # TODO: Exposure. For this, first transformation must be into linear RGB.
+        #   But how is exposure calculated then? Effect of exposure must not depend on linear color space
+        #   choice. How is the transfer function handled in colour?
+
+        # TODO: Linear space if upper case
+        t_0 = datetime.now()
+        color_space_transform, dimension_transform = color_spaces_components_transform[mode]
+        t_trafo_1 = datetime.now() - t_0
+
+        # TODO: adapt below to vectorized
+        # if (color_space_transform in (HSV, HSL, HCL) and dimension_transform in [0, 1]
+        #         and self.coordinates_current.x() == self.coordinates_current.y() == self.coordinates_current.z()):
+        #     # If target compomnent is related to color, but current node has no color, then nothing to do.
+        #     return
+
+        # TODO: get weights from nodes.
+
+        try:
+            def fn(node, result_):
+                if node.is_selected:
+                    result_.append(node.coordinates_current.toTuple())
+
+            coordinates_nodes_current = np.asarray(self.iter_nodes(fn))
+            t_coords_current = datetime.now() - t_0 - t_trafo_1
+
+            weights = np.ones((coordinates_nodes_current.shape[0],))
+
+            # Distance for each node
+            distance_weighted = distance * weights
+
+            coords_current_target_space = self.transform_color_space(
+                self.color_space,
+                color_space_transform,
+                coordinates_nodes_current
+            )
+            t_coords_current_target_space = datetime.now() - t_coords_current - t_0 - t_trafo_1
+
+            components_vector_add = np.asarray([1. if idx_ == dimension_transform else 0. for idx_ in range(3)])
+            coords_new_target_space = coords_current_target_space + components_vector_add[np.newaxis, ...] * \
+                                      distance_weighted[..., np.newaxis]
+            # print(coords_new_target_space.toTuple())
+            # TODO: respect domain!
+            if color_space_transform in (HSV, HSL, HCL) and dimension_transform == 0:
+                # print(coords_new_target_space.x())
+                coords_new_target_space[..., 0] = np.mod(coords_new_target_space[..., 0], 1.)
+            elif color_space_transform == HCL and dimension_transform == 1:
+                # print(coords_new_target_space)
+                # TODO: WRONG!
+                coords_new_target_space[..., 1] = np.clip(coords_new_target_space[..., 0], 0, 2 / 3)
+            elif color_space_transform == HSL and dimension_transform == 2:
+                coords_new_target_space[..., 2] = self.clip_l(coords_new_target_space)
+                # coords_new_target_space.setZ(self.clip_l(*coords_new_target_space.toTuple()))
+                pass
+            else:
+                coords_new_target_space = np.clip(coords_new_target_space, 0, 1)
+            t_clip = datetime.now() - t_0 - t_coords_current - t_trafo_1 - t_coords_current_target_space
+
+            # transform to target color space, modify the according component and then
+            coords_new = self.transform_color_space(
+                color_space_transform,
+                self.color_space,
+                coords_new_target_space
+            )
+            t_coords_new = datetime.now() - t_0 - t_coords_current - t_trafo_1 - t_coords_current_target_space - t_clip
+
+            # TODO: clip to borders
+            # TODO: Clipping must be reflected in the trafo fn, as it must handle color space correctly (
+            #  e.g. pertain hue on clipping)
+            # coors_new = np.reshape(coords_new, (self.lut.size, self.lut.size, self.lut.size, 3))
+
+            index_node = [0]
+
+            def fn(node: NodeLut, result_):
+                if node.is_selected:
+                    node.transform.setTranslation(
+                        QVector3D(*coords_new[index_node[0]])
+                    )
+                    self.lut.table[node.indices_lut] = coords_new[index_node]
+                    index_node[0] = index_node[0] + 1
+
+            self.iter_nodes(
+                fn
+            )
+
+            t_result = datetime.now() - t_0 - t_coords_current - t_trafo_1 - t_coords_current_target_space - t_clip - t_coords_new
+
+            self.lut_changed.emit(self.lut)
+
+            print(
+                f"""
+                t_trafo_1 {t_trafo_1},
+                t_coords_current {t_coords_current},
+                t_coords_current_target_space {t_coords_current_target_space},
+                t_clip {t_clip},
+                t_coords_new  {t_coords_new},
+                t_result {t_result}
+                """
+            )
+
+            print({nameof(t_): t_ for t_ in [
+                t_trafo_1,
+                t_coords_current,
+                t_coords_current_target_space,
+                t_clip,
+                t_coords_new
+            ]})
+
+        except Exception as e:
+            print(f'Error during transformation of node: \n {e}')
+        # TODO: during dragging, this function calculates the new position based on the mode
+        #   (which is mapped to a color transform function (e.g. Hue) of the current color space)
+        #   and applies it to the transform.
+        #   new position is calculated using distance, relative to coordinates_current.
+        #   mode is a qt.key in code
+
+    def clip_l(self, coordinates_hsl):
+        '''
+
+                    C = (1-|2L-1|)S
+                    m = L - C/2
+                    C + m = (1 - |2L-1|)S / 2 + L
+
+                    C- = (1 + 2L - 1) * S       ( L <= 0.5)
+                    C+ = (1 - 2L + 1) * S       ( L > 0.5)
+
+
+                    fall L <= 0.5:
+                        C+m =  (1 + 2L - 1)S/2 +L = L * S + L
+                            = L(1+S)
+                    fall L > 0.5:
+                        C+m =  (1 - 2L + 1)S/2 +L
+                            = (2 - 2L) * S/2 + L
+                            = (1 - L) * S + L
+                            = S - LS + L
+                            = S + (1-S) * L
+
+
+                    A = 1 - |(H/60) % 2 - 1|
+                    B = S * A
+                    Z = S * (A - 1/2)
+                    X = A * C
+                    X + m = A * C - C/2 + L
+                          = C (A - 1/2) + L
+                    fall L <= 0.5:
+                        X + m =  C- (A - 1/2) + L
+                              = (1 + 2L - 1) * S * (A - 1/2) + L
+                              = (1 + 2L - 1) * Z + L
+                              = 2L * Z + L
+                              = L ( 2 * Z + 1)
+                    fall L > 0.5:
+                        X+m = C+ (A - 1/2) + L
+                            = (1 - 2L + 1) * Z + L
+                            = (2 - 2L) * Z + L
+                            = 2Z - 2LZ + L
+                            = 2Z + L(1-2Z)
+
+                    => C+m=0 wenn:num
+                        L = 0
+                        L = -S / (1-S) und L > 0.5 (L must be >= -S / (1+S) WHICH IS ALWAYS TRUE)
+
+                    => X+m = 0 wenn:
+                        L = 0
+                        # ATTENTION: Hue is in range 0-1 instead of degree in colour! convert to degree!
+                        L = - 2Z / (1-2Z) and L > 0.5 ( L darf nicht kleiner werden!)
+
+                    => C+m=1 wenn:
+                        L = 1 / (1+S) and L <= 0.5 (L darf nicht groesser werden)
+                        L = 1 and L > 0.5 (L darf nicht griesser werden
+
+                    => X+m = 1 wenn:
+                        L = 1 / ( 2Z + 1) and L <= 0.5
+                        L = (1-2Z) / (1-2Z) = 1  and L > 0.5  => NIE! (L darf nicht groesser werden)
+                    '''
+
+        h, s, l = coordinates_hsl[..., 0], coordinates_hsl[..., 1], coordinates_hsl[..., 2]
+
+        h_deg = h * 360
+        A = 1 - abs(np.mod(h_deg / 60, 2) - 1)
+        Z = s * (A - 1 / 2)
+
+        # TODO: vectorization!
+        l_low = l <= 0.5
+        lower = np.where(l_low, 0., np.maximum(
+            -s / (1 - s),
+            -2 * Z / (1 - 2 * Z)
+        ))
+        upper = np.where(l_low, np.minimum(
+            1.,
+            1 / (1 + s)
+        ), np.minimum(
+            1.,
+            1.
+        ))
+        # if l <= 0.5:
+        #     lower = 0.
+        #     upper = np.minimum(
+        #         1.,
+        #         1 / (1 + s)
+        #     )
+        # else:
+        #     lower = np.maximum(
+        #         -s / (1 - s),
+        #         -2 * Z / (1 - 2 * Z)
+        #     )
+        #
+        #     upper = np.minimum(
+        #         1.,
+        #         1.
+        #     )
+
+        return np.clip(l, lower, upper)
 
     @QtCore.Slot()
     def select_nodes_by_source_colour_affecting(self, colour_float: QVector3D, expand_selection):
@@ -267,18 +504,14 @@ class Lut3dEntity(Qt3DCore.QComponent):
     def iter_nodes(self, fn, *args, **kwargs):
         results = []
         for nodes_r in self.nodes_lut:
-            results_r = []
             for nodes_g in nodes_r:
-                results_g = []
                 for node in nodes_g:
-                    results_g.append(fn(node, *args, **kwargs))
-                results_r.append(results_g)
-            results.append(results_r)
+                    fn(node, results, *args, **kwargs)
         return results
 
     def select_nodes(self, nodes, expand_selection, deselect_selected):
         if expand_selection:
             [node.select(not node.is_selected or not deselect_selected) for node in nodes]
         else:
-            fn = lambda node: node.select((not node.is_selected or not deselect_selected) and node in nodes)
+            fn = lambda node, _: node.select((not node.is_selected or not deselect_selected) and node in nodes)
             self.iter_nodes(fn)

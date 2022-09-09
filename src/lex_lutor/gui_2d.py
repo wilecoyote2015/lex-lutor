@@ -249,29 +249,18 @@ class MenuWidget(QtWidgets.QWidget):
 
     @QtCore.Slot()
     def start_next_update(self):
-        self.queue_updates_image = self.queue_updates_image[-1:] if self.queue_updates_image else []
-        if self.queue_updates_image:
+        if self.queue_updates_image and not self.queue_updates_image[-1][0].isFinished():
+            self.queue_updates_image = self.queue_updates_image[-1:]
             self.queue_updates_image[-1][0].start()
+        else:
+            self.queue_updates_image = []
 
     @QtCore.Slot(colour.LUT3D)
     def start_update_image(self, lut):
-        # print('start')
-        # self.clean_queue()
-
         # TODO: quit running thread.
-
-        # if self.threads_image:
-        #     for thread, worker, id_worker in self.threads_image:
-        #         try:
-        #             worker.finished.disconnect(self.start_update_image_waiting)
-        #         except RuntimeError:
-        #             pass
-        #
-        #         thread.terminate()
-
         thread, worker = QtCore.QThread(), WorkerLut(self.img_base, lut)
         self.queue_updates_image.append((thread, worker, str(id(worker))))
-        
+
         worker.moveToThread(thread)
         worker.finished.connect(thread.quit)
         # worker.finished.connect(worker.deleteLater)
