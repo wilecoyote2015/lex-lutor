@@ -148,6 +148,10 @@ class Lut3dEntity(Qt3DCore.QComponent):
         self.nodes_lut = None
         self.color_space: colour.models.RGB_Colourspace = None
 
+        # Nodes that represent the base selection before expansion by radius, hue etc.
+        #   This selection contains all nodes that are either clicked directly or are picked in image preview.
+        self.nodes_selection_base = []
+
         self.indices_node_preview_current = None
 
         self.load_lut(lut)
@@ -335,7 +339,12 @@ class Lut3dEntity(Qt3DCore.QComponent):
     def toggle_select_all(self):
         some_nodes_selected = np.any(self.iter_nodes(lambda node, result_: result_.append(node.is_selected)))
 
-        self.iter_nodes(lambda node, _: node.select(not some_nodes_selected))
+        nodes = self.iter_nodes(lambda node, result_: result_.append(node))
+
+        if some_nodes_selected:
+            self.deselect_nodes(nodes)
+        else:
+            self.select_nodes(nodes, False, False)
 
     @QtCore.Slot()
     def reset_selected_nodes(self):
@@ -531,3 +540,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
         else:
             fn = lambda node, _: node.select((not node.is_selected or not deselect_selected) and node in nodes)
             self.iter_nodes(fn)
+
+    def deselect_nodes(self, nodes):
+        for node in nodes:
+            node.select(False)
