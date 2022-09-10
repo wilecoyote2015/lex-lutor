@@ -148,9 +148,10 @@ class Lut3dEntity(Qt3DCore.QComponent):
         self.nodes_lut = None
         self.color_space: colour.models.RGB_Colourspace = None
 
-        # Nodes that represent the base selection before expansion by radius, hue etc.
+        # Nodes that represent the base selection before deriving by expansion by radius, hue etc.
         #   This selection contains all nodes that are either clicked directly or are picked in image preview.
-        self.nodes_selection_base = []
+        #   TODO: Draw them in other color than derived selection
+        self.nodes_selection_base = set()
 
         self.indices_node_preview_current = None
 
@@ -322,11 +323,36 @@ class Lut3dEntity(Qt3DCore.QComponent):
                 def fn(node: NodeLut, result_):
                     if node.is_selected:
                         lut_use.table[node.indices_lut] = [1., 0., 0.]
+
                 self.iter_nodes(fn)
 
             # print('start')
             self.indices_node_preview_current = indices_node
             self.start_preview_weights.emit(lut_use)
+
+    @QtCore.Slot()
+    def select_nodes_derived(self, range_h, range_s, range_v, range_c, range_l):
+        # each range is [min, max], where min must be negative and max must be positive.
+        # Pixels in dense grid covering the selection range around each node's base coordinates in base selection
+        # TODO: not all dimensions are orthogonal, as different color spaces are used!
+        #   how to deal with this? E.g. if bandwidth of l is 0 but v is > 0, no nodes except base
+        #   would be selected, as resulting ser of possible colors would be intersection of hsl and hsv subsets.
+        #   maybe, use union instead of intersection? Does this make sense?
+        #   then, the evenly spaced dummy pixels would be calculated first for hsv, then for hcl and then merged.
+        pixels_dummy = []
+        for node in self.nodes_selection_base:
+
+    # get h, s, v, c, l coordinates of node by transforming from lut color space to hsv and hcl
+
+    # get 3d grid of hsv dummy pixel values
+
+    # get 3d grid of hcl dummy pixel values
+
+    # backtransform both dummy pixel arrays to lut space
+
+    # merge the arrays
+
+    # select nearest for all pixels
 
     @QtCore.Slot(tuple)
     def slot_stop_preview_weights(self, indices_node):
@@ -503,12 +529,14 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
     @QtCore.Slot()
     def select_nodes_by_source_colour_affecting(self, colour_float: QVector3D, expand_selection):
+        # TODO: accept list of colours and vectorize
         nodes = self.find_nodes_influencing_pixel(colour_float)
 
         self.select_nodes(nodes, expand_selection, False)
 
     @QtCore.Slot()
     def select_nodes_by_source_colour_closest(self, colour_float: QVector3D, expand_selection):
+        # TODO: accept list of colours and vectorize
         node = self.find_nearest_node_pixel(colour_float)
 
         self.select_nodes([node], expand_selection, False)
@@ -534,13 +562,37 @@ class Lut3dEntity(Qt3DCore.QComponent):
                     fn(node, results, *args, **kwargs)
         return results
 
-    def select_nodes(self, nodes, expand_selection, deselect_selected):
+    def select_nodes(self, nodes, expand_selection, deselect_selected, change_base_selection=True):
         if expand_selection:
-            [node.select(not node.is_selected or not deselect_selected) for node in nodes]
+            for node in nodes:
+                if not node.is_selected or not deselect_selected:
+                    node.select(True)
+                    if change_base_selection:
+                        self.nodes_selection_base.add(node)
+                else:
+                    node.select(False)
+                    if change_base_selection:
+                        self.remove_node_from_base_selection(node)
+            # [node.select(not node.is_selected or not deselect_selected) for node in nodes]
         else:
-            fn = lambda node, _: node.select((not node.is_selected or not deselect_selected) and node in nodes)
+            def fn(node, _):
+                if (not node.is_selected or not deselect_selected) and node in nodes:
+                    node.select(True)
+                    if change_base_selection:
+                        self.nodes_selection_base.add(node)
+                else:
+                    node.select(False)
+                    if change_base_selection:
+                        self.remove_node_from_base_selection(node)
+
+            # fn = lambda node, _: node.select((not node.is_selected or not deselect_selected) and node in nodes)
             self.iter_nodes(fn)
 
     def deselect_nodes(self, nodes):
         for node in nodes:
             node.select(False)
+            self.remove_node_from_base_selection(node)
+
+    def remove_node_from_base_selection(self, node):
+        if node in self.nodes_selection_base:
+            self.nodes_selection_base.remove(node)
