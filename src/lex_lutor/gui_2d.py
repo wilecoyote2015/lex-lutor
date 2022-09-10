@@ -229,24 +229,6 @@ class MenuWidget(QtWidgets.QWidget):
             QtGui.QPixmap(image_updated)
         )
 
-    def clean_queue(self):
-        # TODO: does this intruduce a memory leak?
-        # TODO: delete all threads before running and after running that are not the latest
-
-        queue_new = []
-        for thread, worker, id_worker in self.queue_updates_image:
-            try:
-                finished = thread.isFinished()
-            except RuntimeError:
-                continue
-
-            if not finished:
-                queue_new.append((thread, worker, id_worker))
-
-        self.queue_updates_image = queue_new
-
-        # self.threads_image = [t for t in self.threads_image if t[0] and not t[0].isFinished()]
-
     @QtCore.Slot()
     def start_next_update(self):
         if self.queue_updates_image and not self.queue_updates_image[-1][0].isFinished():
@@ -271,6 +253,3 @@ class MenuWidget(QtWidgets.QWidget):
 
         if len(self.queue_updates_image) == 1:
             self.start_next_update()
-
-
-        # self.threads_image[-1][0].start()

@@ -138,7 +138,7 @@ class CubeView(Qt3DExtras.Qt3DWindow):
         # TODO: trigger transform slot of all selected nodes (and later those that are in smooth transform radius)
         if self.mode_transform_current is not None:
             screen_size = self.screen().size()
-            distance = (self.coordinates_mouse_event_start.x() - event.x()) / screen_size.width() * 5
+            distance = -(self.coordinates_mouse_event_start.x() - event.x()) / screen_size.width() * 5
             if distance != self.distance_last:
                 self.distance_last = distance
                 self.entity_lut.transform_dragging(self.mode_transform_current, distance)
