@@ -213,20 +213,37 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
         return result
 
-    def find_nearest_node_pixel(self, coordinates_pixel: QVector3D):
-        distance_min = [np.inf]
-        result = [None]
+    def find_nearest_node_pixels(self, coordinates_pixels: np.ndarray):
+        distances_min = np.full((coordinates_pixels.shape[0]), np.inf)
+        indices_nodes_min_pixels = np.full(
+            (coordinates_pixels.shape[0], 3),
+            -1,
+            dtype=int
+        )
+        result = []
 
         def fn(node: NodeLut, result_):
-            distance = coordinates_pixel.distanceToPoint(node.coordinates_source)
+            distances = np.sqrt(
+                np.sum(
+                    (coordinates_pixels - np.asarray(node.coordinates_source.toTuple())[np.newaxis, ...]) ** 2,
+                    axis=-1
+                )
+            )
+            pixels_nearer = distances < distances_min
 
-            if distance < distance_min[0]:
-                result[0] = node
-                distance_min[0] = distance
+            indices_nodes_min_pixels[pixels_nearer] = np.asarray(node.indices_lut)
+            distances_min[pixels_nearer] = distances[pixels_nearer]
 
         self.iter_nodes(fn)
 
-        return result[0]
+        indices_nodes_min_pixels_unique = np.unique(indices_nodes_min_pixels, axis=0)
+
+        nodes = [
+            self.nodes_lut[indices_[0]][indices_[1]][indices_[2]]
+            for indices_ in indices_nodes_min_pixels_unique
+        ]
+
+        return nodes
 
 
     def load_lut(self, lut: colour.LUT3D):
@@ -330,8 +347,12 @@ class Lut3dEntity(Qt3DCore.QComponent):
             self.indices_node_preview_current = indices_node
             self.start_preview_weights.emit(lut_use)
 
+    @property
+    def size(self):
+        return self.lut.size
+
     @QtCore.Slot()
-    def select_nodes_derived(self, range_h, range_s, range_v, range_c, range_l):
+    def select_nodes_derived(self, band_h, band_s, band_v, band_c, band_l):
         # each range is [min, max], where min must be negative and max must be positive.
         # Pixels in dense grid covering the selection range around each node's base coordinates in base selection
         # TODO: not all dimensions are orthogonal, as different color spaces are used!
@@ -339,20 +360,61 @@ class Lut3dEntity(Qt3DCore.QComponent):
         #   would be selected, as resulting ser of possible colors would be intersection of hsl and hsv subsets.
         #   maybe, use union instead of intersection? Does this make sense?
         #   then, the evenly spaced dummy pixels would be calculated first for hsv, then for hcl and then merged.
-        pixels_dummy = []
+        pixels_dummy = np.empty((0, 3), dtype=self.lut.table.dtype)
+        n_dummies_segment = 2
+        range_h = np.linspace(*band_h,
+                              np.ceil(n_dummies_segment * (band_h[1] - band_h[0]) * self.size))  # h is also [0-1]
+        range_s = np.linspace(*band_s, np.ceil(n_dummies_segment * (band_s[1] - band_s[0]) * self.size))
+        range_v = np.linspace(*band_v, np.ceil(n_dummies_segment * (band_v[1] - band_v[0]) * self.size))
+        range_c = np.linspace(*band_c, np.ceil(n_dummies_segment * (band_c[1] - band_c[0]) * self.size))
+        range_l = np.linspace(*band_l, np.ceil(n_dummies_segment * (band_l[1] - band_l[0]) * self.size))
         for node in self.nodes_selection_base:
+            # get h, s, v, c, l coordinates of node by transforming from lut color space to hsv and hcl
+            coords_node_hsv = self.transform_color_space(
+                self.color_space,
+                HSV,
+                np.asarray(node.coordinates_source.toTuple())
+            )
+            coords_node_hcl = self.transform_color_space(
+                self.color_space,
+                HSV,
+                np.asarray(node.coordinates_source.toTuple())
+            )
 
-    # get h, s, v, c, l coordinates of node by transforming from lut color space to hsv and hcl
+            # get 3d grid of hsv dummy pixel values
+            # TODO ATTENTION: handle hsv periodicity!
+            # TODO: indexing of meshgrid correct?
+            pixels_dummy_hsv = np.meshgrid(
+                np.mod(range_h + coords_node_hsv[0], 1.),  # TODO: valid handling of h periodicity?
+                range_s + coords_node_hsv[1],
+                range_v + coords_node_hsv[2],
+            )
+            pixels_dummy_hsv = np.reshape(
+                pixels_dummy_hsv,
+                (pixels_dummy_hsv.shape[0] * pixels_dummy_hsv.shape[1] * pixels_dummy_hsv.shape[2], 3)
+            )
 
-    # get 3d grid of hsv dummy pixel values
+            # get 3d grid of hcl dummy pixel values
+            pixels_dummy_hcl = np.meshgrid(
+                np.mod(range_h + coords_node_hcl[0], 1.),  # TODO: valid handling of h periodicity?
+                range_c + coords_node_hcl[1],
+                range_l + coords_node_hcl[2],
+            )
+            pixels_dummy_hcl = np.reshape(
+                pixels_dummy_hcl,
+                (pixels_dummy_hcl.shape[0] * pixels_dummy_hcl.shape[1] * pixels_dummy_hcl.shape[2], 3)
+            )
 
-    # get 3d grid of hcl dummy pixel values
+            # backtransform both dummy pixel arrays to lut space
+            pixels_dummy_hsv_rgb = self.transform_color_space(HSV, self.color_space, pixels_dummy_hsv)
+            pixels_dummy_hcl_rgb = self.transform_color_space(HCL, self.color_space, pixels_dummy_hcl)
 
-    # backtransform both dummy pixel arrays to lut space
+            # merge the arrays
+            pixels_dummy = np.concatenate([pixels_dummy, pixels_dummy_hsv_rgb, pixels_dummy_hcl_rgb], axis=0)
 
-    # merge the arrays
-
-    # select nearest for all pixels
+        # select nearest for all pixels
+        # TODO: use vectorization!
+        self.select_nodes_by_source_colour_closest(pixels_dummy)
 
     @QtCore.Slot(tuple)
     def slot_stop_preview_weights(self, indices_node):
@@ -535,11 +597,13 @@ class Lut3dEntity(Qt3DCore.QComponent):
         self.select_nodes(nodes, expand_selection, False)
 
     @QtCore.Slot()
-    def select_nodes_by_source_colour_closest(self, colour_float: QVector3D, expand_selection):
+    def select_nodes_by_source_colour_closest(self, colour_float: QVector3D or np.ndarray, expand_selection):
         # TODO: accept list of colours and vectorize
-        node = self.find_nearest_node_pixel(colour_float)
+        nodes = self.find_nearest_node_pixels(
+            np.asarray(colour_float.toTuple())[np.newaxis, ...] if isinstance(colour_float, QVector3D) else colour_float
+        )
 
-        self.select_nodes([node], expand_selection, False)
+        self.select_nodes(nodes, expand_selection, False)
 
     @QtCore.Slot()
     def slot_clicked(self, event):
