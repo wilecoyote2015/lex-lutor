@@ -59,6 +59,19 @@ class LabelClickable(QtWidgets.QLabel):
         # return int(width * aspect_pixmap)
         return aspect_pixmap * width
 
+class SliderFloat(QtWidgets.QSlider):
+    max_ = 1000
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.setRange(0, self.max_)
+
+    def setValue(self, value: int) -> None:
+        self.valueChanged.emit(value / self.max_)
+
+    def value(self):
+        return self.value_ / self.max_
 
 
 class WorkerLut(QObject):
@@ -110,6 +123,9 @@ class MenuWidget(QtWidgets.QWidget):
         self.setLayout(layout)
 
         self.label_image.double_clicked.connect(self.mouseDoubleClickEvent)
+
+    def build_menu(self):
+        self.slider_h = SliderFloat(QtCore.Qt.Horizontal)
 
     @QtCore.Slot(str)
     def load_image(self, path_image, lut):
