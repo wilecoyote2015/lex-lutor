@@ -175,7 +175,8 @@ class Lut3dEntity(Qt3DCore.QComponent):
         self.parent_gui.cancel_transform.connect(self.cancel_transform)
         self.parent_gui.accept_transform.connect(self.accept_transform)
 
-        self.preview_weights_on = False
+        self.preview_weights_on_ = False
+        self.preview_weights_always_on = False
 
         self.queue_updates_transform = []
 
@@ -208,6 +209,10 @@ class Lut3dEntity(Qt3DCore.QComponent):
         # self.picker.entered.connect(self.slot_start_preview_weights)
 
         # self.root_entity = None
+
+    @property
+    def preview_weights_on(self):
+        return self.preview_weights_on_ or self.preview_weights_always_on
 
     @property
     def coordinates_lut_source(self):
@@ -364,7 +369,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
         # TODO: consider derived selection:
         #   build simulated nodes of derived selection from nodes_preview and show them.
         if self.parent_gui.mode_transform_current is None:
-            self.preview_weights_on = True
+            self.preview_weights_on_ = True
 
             indices_nodes_preview = [indices_node]
 
@@ -377,20 +382,33 @@ class Lut3dEntity(Qt3DCore.QComponent):
             self.indices_node_preview_current = indices_node
             self.start_preview_weights.emit(lut_use)
 
-    @QtCore.Slot()
-    def slot_start_preview_selection_slider(self):
+    def start_preview_with_selected_nodes(self):
         lut_use = self.make_lut_preview_selection(self.indices_nodes_selected)
-        self.preview_weights_on = True
         self.start_preview_weights.emit(lut_use)
 
     @QtCore.Slot()
+    def slot_start_preview_selection_slider(self):
+        self.preview_weights_on_ = True
+        self.start_preview_with_selected_nodes()
+
+    @QtCore.Slot()
     def slot_stop_preview_selection_slider(self):
-        self.preview_weights_on = False
-        self.stop_preview_weights.emit(self.lut)
+        self.preview_weights_on_ = False
+        self.stop_preview_weights_node_if_not_always_on()
 
     @property
     def size(self):
         return self.lut.size
+
+    @QtCore.Slot()
+    def toggle_preview_selection_always_on(self):
+        if self.preview_weights_always_on:
+            self.preview_weights_always_on = False
+            self.stop_preview_weights.emit(self.lut)
+
+        else:
+            self.preview_weights_always_on = True
+            self.start_preview_with_selected_nodes()
 
     @QtCore.Slot()
     def select_nodes_derived(self):
@@ -499,13 +517,19 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
     @QtCore.Slot(tuple)
     def slot_stop_hover_node(self, indices_node):
-        if self.preview_weights_on:
+        if self.preview_weights_on_:
             # If transiting mouse quickly between two nodes,
             # The event calling this slot is called after the start for next node.
-            # Only stop preview if node is not
+            # Only stop preview if NOT already hovering over other node.
             if indices_node == self.indices_node_preview_current:
-                self.preview_weights_on = False
-                self.stop_preview_weights.emit(self.lut)
+                self.preview_weights_on_ = False
+                self.stop_preview_weights_node_if_not_always_on()
+
+    def stop_preview_weights_node_if_not_always_on(self):
+        if not self.preview_weights_on:
+            self.stop_preview_weights.emit(self.lut)
+        else:
+            self.start_preview_with_selected_nodes()
 
     @QtCore.Slot()
     def toggle_select_all(self):

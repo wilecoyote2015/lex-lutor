@@ -118,9 +118,12 @@ class CubeView(Qt3DExtras.Qt3DWindow):
             self.accept_transform.emit()
         if key == QtCore.Qt.Key_N and self.mode_transform_current is None:
             # TODO: use signal
+            # TODO: Upper case N for reset to neutral color
             self.entity_lut.reset_selected_nodes()
         if key == QtCore.Qt.Key_A and event.modifiers() == QtCore.Qt.Modifier.SHIFT:
             self.entity_lut.toggle_select_all()
+        if key == QtCore.Qt.Key.Key_Space:
+            self.entity_lut.toggle_preview_selection_always_on()
 
         elif key in color_spaces_components_transform:
             # TODO: Better send signals to start and stop transform?
