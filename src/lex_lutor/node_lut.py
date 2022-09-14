@@ -51,8 +51,8 @@ class NodeLut(Qt3DCore.QEntity):
             coordinates_source.x() * 255,
             coordinates_source.y() * 255,
             coordinates_source.z() * 255,
-                                255
-                            )
+            255
+        )
 
         self.color_selected = QtGui.QColor(
             255,
@@ -60,11 +60,19 @@ class NodeLut(Qt3DCore.QEntity):
             0,
             255
         )
+
+        self.color_selected_base = QtGui.QColor(
+            0,
+            255,
+            0,
+            255
+        )
+
         self.material = Qt3DExtras.QDiffuseSpecularMaterial(
-                            ambient=self.color_source,
-                            specular=QtGui.QColor(0, 0, 0, 0),
-                            diffuse=QtGui.QColor(255, 255, 255, 255)
-                        )
+            ambient=self.color_source,
+            specular=QtGui.QColor(0, 0, 0, 0),
+            diffuse=QtGui.QColor(255, 255, 255, 255)
+        )
 
         self.mesh = Qt3DExtras.QCuboidMesh(xExtent=radius, yExtent=radius, zExtent=radius)
         self.addComponent(self.material)
@@ -73,6 +81,7 @@ class NodeLut(Qt3DCore.QEntity):
 
         # TODO: make signal for selected changed
         self.is_selected = False
+        self.is_selected_base = False
 
         self.active = False
 
@@ -103,11 +112,21 @@ class NodeLut(Qt3DCore.QEntity):
         # TODO: Transformation is ended: reset transform to coordinates_current
         self.transform.setTranslation(self.coordinates_current)
 
-
     @QtCore.Slot(bool)
     def select(self, is_selected):
-        self.material.setAmbient(self.color_selected if is_selected else self.color_source)
         self.is_selected = is_selected
+
+        if not self.is_selected_base:
+            self.material.setAmbient(self.color_selected if is_selected else self.color_source)
+
+    @QtCore.Slot(bool)
+    def select_base(self, is_selected):
+        self.is_selected_base = is_selected
+
+        self.material.setAmbient(self.color_selected_base if is_selected else (
+            self.color_source if not self.is_selected else self.color_selected
+        )
+                                 )
 
     @QtCore.Slot()
     def emit_mouse_hover_stop(self):
@@ -118,4 +137,3 @@ class NodeLut(Qt3DCore.QEntity):
     def emit_mouse_hover_start(self):
         # print(f'Entered {self.indices_lut}')
         self.mouse_hover_start.emit(self.indices_lut)
-

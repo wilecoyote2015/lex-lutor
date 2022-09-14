@@ -18,6 +18,13 @@ from lex_lutor.node_lut import NodeLut
 from datetime import datetime, timedelta
 
 
+# TODO: Handle press / release of shift while in preview
+
+# TODO: While dragging sliders, update selection preview in 2d gui
+
+# TODO: selection preview on node hover should take derived selection into account.
+#   But for this, derived selection must become much faster.
+
 # TODO: Add transformation that corresponds to exposure.
 #   is there a transform function that transforms back to scene-referred linear space?
 #   I hope so.
@@ -138,6 +145,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
     lut_changed = QtCore.Signal(colour.LUT3D)
     start_preview_weights = QtCore.Signal(colour.LUT3D)
     stop_preview_weights = QtCore.Signal(colour.LUT3D)
+    selection_base_changed = Signal()
 
     def __init__(self, lut, parent_gui):
         super().__init__()
@@ -151,7 +159,6 @@ class Lut3dEntity(Qt3DCore.QComponent):
         # Nodes that represent the base selection before deriving by expansion by radius, hue etc.
         #   This selection contains all nodes that are either clicked directly or are picked in image preview.
         #   TODO: Draw them in other color than derived selection
-        self.nodes_selection_base = set()
 
         self.indices_node_preview_current = None
 
@@ -161,9 +168,9 @@ class Lut3dEntity(Qt3DCore.QComponent):
         self.stop_preview_weights.connect(self.parent_gui.gui_parent.widget_menu.start_update_image)
 
         self.parent_gui.gui_parent.widget_menu.select_nodes_affecting_pixel.connect(
-            self.select_nodes_by_source_colour_affecting)
+            self.select_nodes_by_source_colour_affecting_base)
         self.parent_gui.gui_parent.widget_menu.select_node_closest_pixel.connect(
-            self.select_nodes_by_source_colour_closest)
+            self.select_nodes_by_source_colour_closest_base)
 
         self.parent_gui.cancel_transform.connect(self.cancel_transform)
         self.parent_gui.accept_transform.connect(self.accept_transform)
@@ -171,6 +178,26 @@ class Lut3dEntity(Qt3DCore.QComponent):
         self.preview_weights_on = False
 
         self.queue_updates_transform = []
+
+        self.selection_base_changed.connect(self.select_nodes_derived)
+
+        self.parent_gui.gui_parent.widget_menu.slider_h.valueChanged.connect(self.select_nodes_derived)
+        self.parent_gui.gui_parent.widget_menu.slider_s.valueChanged.connect(self.select_nodes_derived)
+        self.parent_gui.gui_parent.widget_menu.slider_v.valueChanged.connect(self.select_nodes_derived)
+        self.parent_gui.gui_parent.widget_menu.slider_c.valueChanged.connect(self.select_nodes_derived)
+        self.parent_gui.gui_parent.widget_menu.slider_l.valueChanged.connect(self.select_nodes_derived)
+
+        self.parent_gui.gui_parent.widget_menu.slider_h.sliderPressed.connect(self.slot_start_preview_selection_slider)
+        self.parent_gui.gui_parent.widget_menu.slider_s.sliderPressed.connect(self.slot_start_preview_selection_slider)
+        self.parent_gui.gui_parent.widget_menu.slider_v.sliderPressed.connect(self.slot_start_preview_selection_slider)
+        self.parent_gui.gui_parent.widget_menu.slider_c.sliderPressed.connect(self.slot_start_preview_selection_slider)
+        self.parent_gui.gui_parent.widget_menu.slider_l.sliderPressed.connect(self.slot_start_preview_selection_slider)
+
+        self.parent_gui.gui_parent.widget_menu.slider_h.sliderReleased.connect(self.slot_stop_preview_selection_slider)
+        self.parent_gui.gui_parent.widget_menu.slider_s.sliderReleased.connect(self.slot_stop_preview_selection_slider)
+        self.parent_gui.gui_parent.widget_menu.slider_v.sliderReleased.connect(self.slot_stop_preview_selection_slider)
+        self.parent_gui.gui_parent.widget_menu.slider_c.sliderReleased.connect(self.slot_stop_preview_selection_slider)
+        self.parent_gui.gui_parent.widget_menu.slider_l.sliderReleased.connect(self.slot_stop_preview_selection_slider)
 
         # self.time_last_change = datetime.now()
         # self.timedelta_update = timedelta(milliseconds=100)
@@ -182,15 +209,14 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
         # self.root_entity = None
 
-
-    def get_coordinates_lut_source(self, lut: colour.LUT3D):
-        values_r_source = np.linspace(lut.domain[0,0], lut.domain[1,0], lut.size)
-        values_g_source = np.linspace(lut.domain[0,1], lut.domain[1,1], lut.size)
-        values_b_source = np.linspace(lut.domain[0,2], lut.domain[1,2], lut.size)
+    @property
+    def coordinates_lut_source(self):
+        lut = self.lut
+        values_r_source = np.linspace(lut.domain[0, 0], lut.domain[1, 0], lut.size)
+        values_g_source = np.linspace(lut.domain[0, 1], lut.domain[1, 1], lut.size)
+        values_b_source = np.linspace(lut.domain[0, 2], lut.domain[1, 2], lut.size)
 
         return values_r_source, values_g_source, values_b_source
-
-
 
     # def load_lut_file(self, filepath):
     #     lut =
@@ -213,35 +239,26 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
         return result
 
-    def find_nearest_node_pixels(self, coordinates_pixels: np.ndarray):
-        distances_min = np.full((coordinates_pixels.shape[0]), np.inf)
-        indices_nodes_min_pixels = np.full(
-            (coordinates_pixels.shape[0], 3),
-            -1,
-            dtype=int
+    @property
+    def nodes_selection_base(self):
+        def fn(node, result_):
+            if node.is_selected_base:
+                result_.append(node)
+
+        return self.iter_nodes(fn)
+
+    def find_nearest_nodes_pixels(self, coordinates_pixels: np.ndarray):
+        coordinate_axes_source = np.stack(self.coordinates_lut_source, axis=-1)
+
+        indices_nearest = np.argmin(
+            np.abs(
+                coordinates_pixels[:, np.newaxis, ...] - coordinate_axes_source[np.newaxis, ...]
+            ),
+            axis=1
         )
-        result = []
+        indices_nearest_unique = np.unique(indices_nearest, axis=0)
 
-        def fn(node: NodeLut, result_):
-            distances = np.sqrt(
-                np.sum(
-                    (coordinates_pixels - np.asarray(node.coordinates_source.toTuple())[np.newaxis, ...]) ** 2,
-                    axis=-1
-                )
-            )
-            pixels_nearer = distances < distances_min
-
-            indices_nodes_min_pixels[pixels_nearer] = np.asarray(node.indices_lut)
-            distances_min[pixels_nearer] = distances[pixels_nearer]
-
-        self.iter_nodes(fn)
-
-        indices_nodes_min_pixels_unique = np.unique(indices_nodes_min_pixels, axis=0)
-
-        nodes = [
-            self.nodes_lut[indices_[0]][indices_[1]][indices_[2]]
-            for indices_ in indices_nodes_min_pixels_unique
-        ]
+        nodes = [self.nodes_lut[indices[0]][indices[1]][indices[2]] for indices in indices_nearest_unique]
 
         return nodes
 
@@ -255,7 +272,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
         # TODO: 2 textures: source and target, that can be switched
         # TODO: Color map from lut space to display srgb
 
-        coordinates_r_source, coordinates_g_source, coordinates_b_source = self.get_coordinates_lut_source(lut)
+        coordinates_r_source, coordinates_g_source, coordinates_b_source = self.coordinates_lut_source
 
         radius = np.min(lut.domain[1] - lut.domain[0]) / lut.size / 5
 
@@ -291,8 +308,8 @@ class Lut3dEntity(Qt3DCore.QComponent):
                     # entity_node.mouse_hover_stop.connect(self.parent_gui.gui_parent.widget_menu.slot_hover_node_stop)
 
                     # entity_node.mouse_hover_start.connect()
-                    entity_node.mouse_hover_start.connect(self.slot_start_preview_weights)
-                    entity_node.mouse_hover_stop.connect(self.slot_stop_preview_weights)
+                    entity_node.mouse_hover_start.connect(self.slot_start_hover_node)
+                    entity_node.mouse_hover_stop.connect(self.slot_stop_hover_node)
 
                     # entity_node.position_changed.connect(self.update_lut_node_changed)
                     # self.parent_gui.cancel_transform.connect(entity_node.cancel_transform)
@@ -324,115 +341,182 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
         self.lut_changed.emit(self.lut)
 
+    @property
+    def indices_nodes_selected(self):
+        def fn(node: NodeLut, result_):
+            if node.is_selected:
+                result_.append(node.indices_lut)
+
+        return self.iter_nodes(fn)
+
+    def make_lut_preview_selection(self, indices_nodes):
+        lut_use = colour.LUT3D(
+            colour.LUT3D.linear_table(self.lut.size) ** 2
+        )
+        lut_use.table = np.tile(np.mean(self.lut.table, axis=3)[..., np.newaxis], (1, 1, 1, 3))
+        for indices_nodes_preview in indices_nodes:
+            lut_use.table[indices_nodes_preview] = [1., 0., 0.]
+
+        return lut_use
+
     @QtCore.Slot(tuple)
-    def slot_start_preview_weights(self, indices_node):
+    def slot_start_hover_node(self, indices_node):
+        # TODO: consider derived selection:
+        #   build simulated nodes of derived selection from nodes_preview and show them.
         if self.parent_gui.mode_transform_current is None:
             self.preview_weights_on = True
-            lut_use = colour.LUT3D(
-                colour.LUT3D.linear_table(self.lut.size) ** 2
-            )
 
-            lut_use.table = np.tile(np.mean(self.lut.table, axis=3)[..., np.newaxis], (1, 1, 1, 3))
-            lut_use.table[indices_node] = [1., 0., 0.]
+            indices_nodes_preview = [indices_node]
 
             modifiers = QGuiApplication.keyboardModifiers()
             if modifiers == QtCore.Qt.Modifier.SHIFT:
-                def fn(node: NodeLut, result_):
-                    if node.is_selected:
-                        lut_use.table[node.indices_lut] = [1., 0., 0.]
-
-                self.iter_nodes(fn)
+                indices_nodes_preview.extend(self.indices_nodes_selected)
+            lut_use = self.make_lut_preview_selection(indices_nodes_preview)
 
             # print('start')
             self.indices_node_preview_current = indices_node
             self.start_preview_weights.emit(lut_use)
+
+    @QtCore.Slot()
+    def slot_start_preview_selection_slider(self):
+        lut_use = self.make_lut_preview_selection(self.indices_nodes_selected)
+        self.preview_weights_on = True
+        self.start_preview_weights.emit(lut_use)
+
+    @QtCore.Slot()
+    def slot_stop_preview_selection_slider(self):
+        self.preview_weights_on = False
+        self.stop_preview_weights.emit(self.lut)
 
     @property
     def size(self):
         return self.lut.size
 
     @QtCore.Slot()
-    def select_nodes_derived(self, band_h, band_s, band_v, band_c, band_l):
-        # each range is [min, max], where min must be negative and max must be positive.
-        # Pixels in dense grid covering the selection range around each node's base coordinates in base selection
-        # TODO: not all dimensions are orthogonal, as different color spaces are used!
-        #   how to deal with this? E.g. if bandwidth of l is 0 but v is > 0, no nodes except base
-        #   would be selected, as resulting ser of possible colors would be intersection of hsl and hsv subsets.
-        #   maybe, use union instead of intersection? Does this make sense?
-        #   then, the evenly spaced dummy pixels would be calculated first for hsv, then for hcl and then merged.
-        pixels_dummy = np.empty((0, 3), dtype=self.lut.table.dtype)
-        n_dummies_segment = 2
-        range_h = np.linspace(*band_h,
-                              np.ceil(n_dummies_segment * (band_h[1] - band_h[0]) * self.size))  # h is also [0-1]
-        range_s = np.linspace(*band_s, np.ceil(n_dummies_segment * (band_s[1] - band_s[0]) * self.size))
-        range_v = np.linspace(*band_v, np.ceil(n_dummies_segment * (band_v[1] - band_v[0]) * self.size))
-        range_c = np.linspace(*band_c, np.ceil(n_dummies_segment * (band_c[1] - band_c[0]) * self.size))
-        range_l = np.linspace(*band_l, np.ceil(n_dummies_segment * (band_l[1] - band_l[0]) * self.size))
-        for node in self.nodes_selection_base:
-            # get h, s, v, c, l coordinates of node by transforming from lut color space to hsv and hcl
-            coords_node_hsv = self.transform_color_space(
-                self.color_space,
-                HSV,
-                np.asarray(node.coordinates_source.toTuple())
-            )
-            coords_node_hcl = self.transform_color_space(
-                self.color_space,
-                HSV,
-                np.asarray(node.coordinates_source.toTuple())
-            )
+    def select_nodes_derived(self):
+        # TODO: Must use multiprocessing with own queue
+        gui_2d = self.parent_gui.gui_parent.widget_menu
+        band_h = gui_2d.slider_h.value()
+        band_s = gui_2d.slider_s.value()
+        band_v = gui_2d.slider_v.value()
+        band_c = gui_2d.slider_c.value()
+        band_l = gui_2d.slider_l.value()
 
-            # get 3d grid of hsv dummy pixel values
-            # TODO ATTENTION: handle hsv periodicity!
-            # TODO: indexing of meshgrid correct?
-            pixels_dummy_hsv = np.meshgrid(
-                np.mod(range_h + coords_node_hsv[0], 1.),  # TODO: valid handling of h periodicity?
-                range_s + coords_node_hsv[1],
-                range_v + coords_node_hsv[2],
-            )
-            pixels_dummy_hsv = np.reshape(
-                pixels_dummy_hsv,
-                (pixels_dummy_hsv.shape[0] * pixels_dummy_hsv.shape[1] * pixels_dummy_hsv.shape[2], 3)
-            )
+        # Nothing to do if all nodes are already in base selection.
+        if len(self.nodes_selection_base) == self.size ** 3 or band_h == 0 and band_s == 0 and band_v == 0 and band_c == 0 and band_l == 0:
+            nodes_select = []
+        else:
+            # For now, sliders are only one value. convert to min max
+            band_h = [-band_h, band_h]
+            band_s = [-band_s, band_s]
+            band_v = [-band_v, band_v]
+            band_c = [-band_c, band_c]
+            band_l = [-band_l, band_l]
+            # TODO: speedup: make number of dummy pixels dependent on range
+            # each range is [min, max], where min must be negative and max must be positive.
+            # Pixels in dense grid covering the selection range around each node's base coordinates in base selection
+            # TODO: not all dimensions are orthogonal, as different color spaces are used!
+            #   how to deal with this? E.g. if bandwidth of l is 0 but v is > 0, no nodes except base
+            #   would be selected, as resulting ser of possible colors would be intersection of hsl and hsv subsets.
+            #   maybe, use union instead of intersection? Does this make sense?
+            #   then, the evenly spaced dummy pixels would be calculated first for hsv, then for hcl and then merged.
+            pixels_dummy = np.empty((0, 3), dtype=self.lut.table.dtype)
+            n_dummies_segment = 2
+            range_h = np.linspace(*band_h,
+                                  n_dummies_segment * self.size)  # h is also [0-1]
+            range_s = np.linspace(*band_s, n_dummies_segment * self.size)
+            range_v = np.linspace(*band_v, n_dummies_segment * self.size)
+            range_c = np.linspace(*band_c, n_dummies_segment * self.size)
+            range_l = np.linspace(*band_l, n_dummies_segment * self.size)
+            t1 = datetime.now()
+            for node in self.nodes_selection_base:
+                # get h, s, v, c, l coordinates of node by transforming from lut color space to hsv and hcl
+                coords_node_hsv = self.transform_color_space(
+                    self.color_space,
+                    HSV,
+                    np.asarray(node.coordinates_source.toTuple())
+                )
+                coords_node_hcl = self.transform_color_space(
+                    self.color_space,
+                    HSV,
+                    np.asarray(node.coordinates_source.toTuple())
+                )
 
-            # get 3d grid of hcl dummy pixel values
-            pixels_dummy_hcl = np.meshgrid(
-                np.mod(range_h + coords_node_hcl[0], 1.),  # TODO: valid handling of h periodicity?
-                range_c + coords_node_hcl[1],
-                range_l + coords_node_hcl[2],
+                # get 3d grid of hsv dummy pixel values
+                # TODO ATTENTION: handle hsv periodicity!
+                # TODO: indexing of meshgrid correct?
+                pixels_dummy_hsv = np.stack(np.meshgrid(
+                    np.mod(range_h + coords_node_hsv[0], 1.),  # TODO: valid handling of h periodicity?
+                    range_s + coords_node_hsv[1],
+                    range_v + coords_node_hsv[2],
+                ), axis=-1)
+                pixels_dummy_hsv = np.reshape(
+                    pixels_dummy_hsv,
+                    (pixels_dummy_hsv.shape[0] * pixels_dummy_hsv.shape[1] * pixels_dummy_hsv.shape[2], 3)
+                )
+
+                # get 3d grid of hcl dummy pixel values
+                pixels_dummy_hcl = np.stack(np.meshgrid(
+                    np.mod(range_h + coords_node_hcl[0], 1.),  # TODO: valid handling of h periodicity?
+                    range_c + coords_node_hcl[1],
+                    range_l + coords_node_hcl[2],
+                ), axis=-1)
+                pixels_dummy_hcl = np.reshape(
+                    pixels_dummy_hcl,
+                    (pixels_dummy_hcl.shape[0] * pixels_dummy_hcl.shape[1] * pixels_dummy_hcl.shape[2], 3)
+                )
+
+                # backtransform both dummy pixel arrays to lut space
+                pixels_dummy_hsv_rgb = self.transform_color_space(HSV, self.color_space, pixels_dummy_hsv)
+                pixels_dummy_hcl_rgb = self.transform_color_space(HCL, self.color_space, pixels_dummy_hcl)
+
+                # merge the arrays
+                pixels_dummy = np.concatenate([pixels_dummy, pixels_dummy_hsv_rgb, pixels_dummy_hcl_rgb], axis=0)
+
+            t2 = datetime.now()
+
+            print(f'Created dummies in {t2 - t1}')
+
+            # select nearest for all pixels
+            # TODO: use vectorization!
+
+            nodes_select = self.find_nearest_nodes_pixels(
+                pixels_dummy
             )
-            pixels_dummy_hcl = np.reshape(
-                pixels_dummy_hcl,
-                (pixels_dummy_hcl.shape[0] * pixels_dummy_hcl.shape[1] * pixels_dummy_hcl.shape[2], 3)
-            )
+            t3 = datetime.now()
+            print(f'Found nodes to select in {t3 - t2}')
 
-            # backtransform both dummy pixel arrays to lut space
-            pixels_dummy_hsv_rgb = self.transform_color_space(HSV, self.color_space, pixels_dummy_hsv)
-            pixels_dummy_hcl_rgb = self.transform_color_space(HCL, self.color_space, pixels_dummy_hcl)
+        def fn(node, result_):
+            if node in nodes_select or node in self.nodes_selection_base:
+                node.select(True)
+            else:
+                node.select(False)
 
-            # merge the arrays
-            pixels_dummy = np.concatenate([pixels_dummy, pixels_dummy_hsv_rgb, pixels_dummy_hcl_rgb], axis=0)
+        self.iter_nodes(fn)
 
-        # select nearest for all pixels
-        # TODO: use vectorization!
-        self.select_nodes_by_source_colour_closest(pixels_dummy)
+        if self.preview_weights_on:
+            self.start_preview_weights.emit(self.make_lut_preview_selection(self.indices_nodes_selected))
 
     @QtCore.Slot(tuple)
-    def slot_stop_preview_weights(self, indices_node):
+    def slot_stop_hover_node(self, indices_node):
         if self.preview_weights_on:
+            # If transiting mouse quickly between two nodes,
+            # The event calling this slot is called after the start for next node.
+            # Only stop preview if node is not
             if indices_node == self.indices_node_preview_current:
                 self.preview_weights_on = False
                 self.stop_preview_weights.emit(self.lut)
 
     @QtCore.Slot()
     def toggle_select_all(self):
-        some_nodes_selected = np.any(self.iter_nodes(lambda node, result_: result_.append(node.is_selected)))
+        some_nodes_selected = np.any(self.iter_nodes(lambda node, result_: result_.append(node.is_selected_base)))
 
         nodes = self.iter_nodes(lambda node, result_: result_.append(node))
 
         if some_nodes_selected:
-            self.deselect_nodes(nodes)
+            self.select_nodes_base([], False, False)
         else:
-            self.select_nodes(nodes, False, False)
+            self.select_nodes_base(nodes, False, False)
 
     @QtCore.Slot()
     def reset_selected_nodes(self):
@@ -590,20 +674,20 @@ class Lut3dEntity(Qt3DCore.QComponent):
         return np.clip(l, lower, upper)
 
     @QtCore.Slot()
-    def select_nodes_by_source_colour_affecting(self, colour_float: QVector3D, expand_selection):
+    def select_nodes_by_source_colour_affecting_base(self, colour_float: QVector3D, expand_selection):
         # TODO: accept list of colours and vectorize
         nodes = self.find_nodes_influencing_pixel(colour_float)
 
-        self.select_nodes(nodes, expand_selection, False)
+        self.select_nodes_base(nodes, expand_selection, False)
 
     @QtCore.Slot()
-    def select_nodes_by_source_colour_closest(self, colour_float: QVector3D or np.ndarray, expand_selection):
+    def select_nodes_by_source_colour_closest_base(self, colour_float: QVector3D or np.ndarray, expand_selection):
         # TODO: accept list of colours and vectorize
-        nodes = self.find_nearest_node_pixels(
+        nodes = self.find_nearest_nodes_pixels(
             np.asarray(colour_float.toTuple())[np.newaxis, ...] if isinstance(colour_float, QVector3D) else colour_float
         )
 
-        self.select_nodes(nodes, expand_selection, False)
+        self.select_nodes_base(nodes, expand_selection, False)
 
     @QtCore.Slot()
     def slot_clicked(self, event):
@@ -611,7 +695,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
         modifiers = event.modifiers()
 
         if event.button() == Qt3DRender.QPickEvent.LeftButton and self.parent_gui.mode_transform_current is None:
-            self.select_nodes(
+            self.select_nodes_base(
                 [node],
                 modifiers == Qt3DRender.QPickEvent.ShiftModifier
                 or modifiers == Qt3DRender.QPickEvent.ShiftModifier + Qt3DRender.QPickEvent.ControlModifier,
@@ -626,37 +710,37 @@ class Lut3dEntity(Qt3DCore.QComponent):
                     fn(node, results, *args, **kwargs)
         return results
 
-    def select_nodes(self, nodes, expand_selection, deselect_selected, change_base_selection=True):
+    def select_nodes_base(self, nodes, expand_selection, deselect_selected):
         if expand_selection:
             for node in nodes:
-                if not node.is_selected or not deselect_selected:
-                    node.select(True)
-                    if change_base_selection:
-                        self.nodes_selection_base.add(node)
+                if not node.is_selected_base or not deselect_selected:
+                    node.select_base(True)
+                    # self.nodes_selection_base.add(node)
+                    # if change_base_selection:
+
                 else:
-                    node.select(False)
-                    if change_base_selection:
-                        self.remove_node_from_base_selection(node)
+                    node.select_base(False)
+                    # self.remove_node_from_base_selection(node)
             # [node.select(not node.is_selected or not deselect_selected) for node in nodes]
         else:
             def fn(node, _):
-                if (not node.is_selected or not deselect_selected) and node in nodes:
-                    node.select(True)
-                    if change_base_selection:
-                        self.nodes_selection_base.add(node)
+                if (not node.is_selected_base or not deselect_selected) and node in nodes:
+                    node.select_base(True)
                 else:
-                    node.select(False)
-                    if change_base_selection:
-                        self.remove_node_from_base_selection(node)
+                    node.select_base(False)
 
             # fn = lambda node, _: node.select((not node.is_selected or not deselect_selected) and node in nodes)
             self.iter_nodes(fn)
 
-    def deselect_nodes(self, nodes):
-        for node in nodes:
-            node.select(False)
-            self.remove_node_from_base_selection(node)
+        self.selection_base_changed.emit()
 
-    def remove_node_from_base_selection(self, node):
-        if node in self.nodes_selection_base:
-            self.nodes_selection_base.remove(node)
+    # def deselect_nodes_base(self, nodes):
+    #     for node in nodes:
+    #         # node.select(False)
+    #         self.remove_node_from_base_selection(node)
+    #
+    #     self.selection_base_changed.emit()
+    #
+    # def remove_node_from_base_selection(self, node):
+    #     if node in self.nodes_selection_base:
+    #         self.nodes_selection_base.remove(node)

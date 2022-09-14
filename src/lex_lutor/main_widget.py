@@ -31,7 +31,7 @@ class MainWidget(QtWidgets.QWidget):
         # widget_3d.setMaximumSize(screenSize)
         # widget_3d.setMinimumSize(QtCore.QSize(200, 100))
 
-        self.widget_menu = MenuWidget()
+        self.widget_menu = MenuWidget(self)
 
         layout = QHBoxLayout(self)
         layout.addWidget(self.window_3d_widget, 1)

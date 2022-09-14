@@ -60,7 +60,7 @@ class LabelClickable(QtWidgets.QLabel):
         return aspect_pixmap * width
 
 class SliderFloat(QtWidgets.QSlider):
-    max_ = 1000
+    max_ = 20
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -71,7 +71,7 @@ class SliderFloat(QtWidgets.QSlider):
         self.valueChanged.emit(value / self.max_)
 
     def value(self):
-        return self.value_ / self.max_
+        return super().value() / self.max_
 
 
 class WorkerLut(QObject):
@@ -115,10 +115,12 @@ class MenuWidget(QtWidgets.QWidget):
         self.label_image.setScaledContents(True)
         self.img_base = None
 
+        menu = self.build_menu()
+
         layout = QVBoxLayout()
         layout.addWidget(self.label_image)
         # layout.addStretch(2)
-        layout.addWidget(button_test2)
+        layout.addLayout(menu)
 
         self.setLayout(layout)
 
@@ -126,6 +128,20 @@ class MenuWidget(QtWidgets.QWidget):
 
     def build_menu(self):
         self.slider_h = SliderFloat(QtCore.Qt.Horizontal)
+        self.slider_s = SliderFloat(QtCore.Qt.Horizontal)
+        self.slider_v = SliderFloat(QtCore.Qt.Horizontal)
+        self.slider_c = SliderFloat(QtCore.Qt.Horizontal)
+        self.slider_l = SliderFloat(QtCore.Qt.Horizontal)
+
+        self.layout_menu = QVBoxLayout()
+
+        self.layout_menu.addWidget(self.slider_h)
+        self.layout_menu.addWidget(self.slider_s)
+        self.layout_menu.addWidget(self.slider_v)
+        self.layout_menu.addWidget(self.slider_c)
+        self.layout_menu.addWidget(self.slider_l)
+
+        return self.layout_menu
 
     @QtCore.Slot(str)
     def load_image(self, path_image, lut):
