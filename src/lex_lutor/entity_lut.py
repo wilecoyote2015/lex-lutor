@@ -335,6 +335,8 @@ class Lut3dEntity(Qt3DCore.QComponent):
         self.iter_nodes(fn)
 
         self.lut_changed.emit(self.lut)
+        if self.preview_weights_on:
+            self.start_preview_with_selected_nodes()
 
     @QtCore.Slot()
     def cancel_transform(self):
@@ -345,6 +347,8 @@ class Lut3dEntity(Qt3DCore.QComponent):
         self.iter_nodes(fn)
 
         self.lut_changed.emit(self.lut)
+        if self.preview_weights_on:
+            self.start_preview_with_selected_nodes()
 
     @property
     def indices_nodes_selected(self):
@@ -372,6 +376,9 @@ class Lut3dEntity(Qt3DCore.QComponent):
             self.preview_weights_on_ = True
 
             indices_nodes_preview = [indices_node]
+            node_hovered = self.nodes_lut[indices_node[0]][indices_node[1]][indices_node[2]]
+            nodes_selection_derived = self.get_nodes_select_derived([node_hovered])
+            indices_nodes_preview.extend([node.indices_lut for node in nodes_selection_derived])
 
             modifiers = QGuiApplication.keyboardModifiers()
             if modifiers == QtCore.Qt.Modifier.SHIFT:
@@ -410,8 +417,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
             self.preview_weights_always_on = True
             self.start_preview_with_selected_nodes()
 
-    @QtCore.Slot()
-    def select_nodes_derived(self):
+    def get_nodes_select_derived(self, nodes_selection_base):
         # TODO: Must use multiprocessing with own queue
         gui_2d = self.parent_gui.gui_parent.widget_menu
         band_h = gui_2d.slider_h.value()
@@ -421,8 +427,8 @@ class Lut3dEntity(Qt3DCore.QComponent):
         band_l = gui_2d.slider_l.value()
 
         # Nothing to do if all nodes are already in base selection.
-        if len(self.nodes_selection_base) == self.size ** 3 or band_h == 0 and band_s == 0 and band_v == 0 and band_c == 0 and band_l == 0:
-            nodes_select = []
+        if len(nodes_selection_base) == self.size ** 3 or band_h == 0 and band_s == 0 and band_v == 0 and band_c == 0 and band_l == 0:
+            return []
         else:
             # For now, sliders are only one value. convert to min max
             band_h = [-band_h, band_h]
@@ -447,7 +453,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
             range_c = np.linspace(*band_c, n_dummies_segment * self.size)
             range_l = np.linspace(*band_l, n_dummies_segment * self.size)
             t1 = datetime.now()
-            for node in self.nodes_selection_base:
+            for node in nodes_selection_base:
                 # get h, s, v, c, l coordinates of node by transforming from lut color space to hsv and hcl
                 coords_node_hsv = self.transform_color_space(
                     self.color_space,
@@ -503,6 +509,12 @@ class Lut3dEntity(Qt3DCore.QComponent):
             )
             t3 = datetime.now()
             print(f'Found nodes to select in {t3 - t2}')
+
+            return nodes_select
+
+    @QtCore.Slot()
+    def select_nodes_derived(self):
+        nodes_select = self.get_nodes_select_derived(self.nodes_selection_base)
 
         def fn(node, result_):
             if node in nodes_select or node in self.nodes_selection_base:
@@ -598,7 +610,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
         worker.moveToThread(thread)
         worker.finished.connect(thread.quit)
         # worker.finished.connect(worker.deleteLater)
-        worker.finished.connect(self.apply_transform_dragging)
+        worker.finished.connect(self.apply_calculated_transorm_to_nodes_dragging_change)
         # thread.finished.connect(thread.deleteLater)
         thread.finished.connect(self.start_next_update_transform_dragging)
         thread.started.connect(worker.run)
@@ -607,7 +619,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
             self.start_next_update_transform_dragging()
 
     @QtCore.Slot(list, np.ndarray)
-    def apply_transform_dragging(self, nodes, coordinates):
+    def apply_calculated_transorm_to_nodes_dragging_change(self, nodes, coordinates):
         for idx, node in enumerate(nodes):
             node.transform.setTranslation(
                 QVector3D(*coordinates[idx])

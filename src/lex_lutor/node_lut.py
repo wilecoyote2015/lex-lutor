@@ -14,16 +14,19 @@ import colour
 from lex_lutor.constants import HSV, HSL, HCL, color_spaces_components_transform, KEY_EXPOSURE
 
 
+# TODO: instead of is_selected, have a selection weight.
+#   this way, selection smoothing can be performed easily.
 
 class NodeLut(Qt3DCore.QEntity):
-    position_changed = QtCore.Signal(tuple, QVector3D) # indices, coordinates
+    position_changed = QtCore.Signal(tuple, QVector3D)  # indices, coordinates
     mouse_hover_start = QtCore.Signal(tuple)
     mouse_hover_stop = QtCore.Signal(tuple)
 
-    def __init__(self, indices_lut: tuple, coordinates_target: QVector3D, coordinates_source: QVector3D, radius: int, lut_parent=None):
+    def __init__(self, indices_lut: tuple, coordinates_target: QVector3D, coordinates_source: QVector3D, radius: int,
+                 lut_parent=None):
         super(NodeLut, self).__init__(lut_parent)
         self.indices_lut = indices_lut
-        self.lut_parent= lut_parent
+        self.lut_parent = lut_parent
         # TODO: handle display color space here.
         #   Color should be some color-managed object from colour.
 
@@ -71,7 +74,7 @@ class NodeLut(Qt3DCore.QEntity):
         self.material = Qt3DExtras.QDiffuseSpecularMaterial(
             ambient=self.color_source,
             specular=QtGui.QColor(0, 0, 0, 0),
-            diffuse=QtGui.QColor(255, 255, 255, 255)
+            diffuse=QtGui.QColor(255, 255, 255, 255),
         )
 
         self.mesh = Qt3DExtras.QCuboidMesh(xExtent=radius, yExtent=radius, zExtent=radius)
