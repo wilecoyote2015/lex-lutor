@@ -10,6 +10,7 @@ from PySide6.Qt3DInput import Qt3DInput
 from PySide6.Qt3DRender import Qt3DRender
 from lex_lutor.constants import HSV, HSL, HCL, color_spaces_components_transform, KEY_EXPOSURE
 from datetime import datetime
+from lex_lutor.job_queue import JobQueue
 
 from varname import nameof
 # from PySide6 import Qt3DCore, Qt3DExtras, Qt3DInput, Qt3DRender
@@ -54,12 +55,6 @@ class WorkerTransform(QObject):
         self.distance = distance
 
     def run(self, ):
-        # TODO: Performance! This should also be threaded and use quere, as many transforms are triggered during
-        #   dragging and block UI, especially if many nodes are selected.
-
-        # TODO: Transform must be calculated here in vectorized form for all selected nodes.
-        #   Calculating per node is too slow.
-
         # TODO: Exposure. For this, first transformation must be into linear RGB.
         #   But how is exposure calculated then? Effect of exposure must not depend on linear color space
         #   choice. How is the transfer function handled in colour?
@@ -178,7 +173,10 @@ class Lut3dEntity(Qt3DCore.QComponent):
         self.preview_weights_on_ = False
         self.preview_weights_always_on = False
 
-        self.queue_updates_transform = []
+        self.queue_updates_transform = JobQueue(
+            WorkerTransform,
+            self.apply_calculated_transorm_to_nodes_dragging_change
+        )
 
         self.selection_base_changed.connect(self.select_nodes_derived)
 
@@ -593,30 +591,9 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
         return result
 
-    @QtCore.Slot()
-    def start_next_update_transform_dragging(self):
-        if self.queue_updates_transform and not self.queue_updates_transform[-1][0].isFinished():
-            self.queue_updates_transform = self.queue_updates_transform[-1:]
-            self.queue_updates_transform[-1][0].start()
-        else:
-            self.queue_updates_transform = []
-
     @QtCore.Slot(int, float)
     def transform_dragging(self, mode, distance):
-        # TODO: quit running thread.
-        thread, worker = QtCore.QThread(), WorkerTransform(self, mode, distance)
-        self.queue_updates_transform.append((thread, worker, str(id(worker))))
-
-        worker.moveToThread(thread)
-        worker.finished.connect(thread.quit)
-        # worker.finished.connect(worker.deleteLater)
-        worker.finished.connect(self.apply_calculated_transorm_to_nodes_dragging_change)
-        # thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(self.start_next_update_transform_dragging)
-        thread.started.connect(worker.run)
-
-        if len(self.queue_updates_transform) == 1:
-            self.start_next_update_transform_dragging()
+        self.queue_updates_transform.start_job(self, mode, distance)
 
     @QtCore.Slot(list, np.ndarray)
     def apply_calculated_transorm_to_nodes_dragging_change(self, nodes, coordinates):

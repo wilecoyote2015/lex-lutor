@@ -11,6 +11,7 @@ from PySide6.Qt3DRender import Qt3DRender
 # from PySide6 import Qt3DCore, Qt3DExtras, Qt3DInput, Qt3DRender
 import cv2
 import sys
+from lex_lutor.job_queue import JobQueue
 from tqdm import tqdm
 from scipy.sparse import csc_matrix
 
@@ -109,11 +110,14 @@ class MenuWidget(QtWidgets.QWidget):
         self.interpolation_matrix = None
         button_test2 = QPushButton('test2')
 
-        self.queue_updates_image: [QtCore.QThread, QtCore.QObject, str] = []
-
         self.label_image = LabelClickable()
         self.label_image.setScaledContents(True)
         self.img_base = None
+
+        self.queue_updates_image = JobQueue(
+            WorkerLut,
+            self.update_image_async,
+        )
 
         menu = self.build_menu()
 
@@ -125,6 +129,7 @@ class MenuWidget(QtWidgets.QWidget):
         self.setLayout(layout)
 
         self.label_image.double_clicked.connect(self.mouseDoubleClickEvent)
+
 
     def build_menu(self):
         self.slider_h = SliderFloat(QtCore.Qt.Horizontal)
@@ -261,27 +266,6 @@ class MenuWidget(QtWidgets.QWidget):
             QtGui.QPixmap(image_updated)
         )
 
-    @QtCore.Slot()
-    def start_next_update(self):
-        if self.queue_updates_image and not self.queue_updates_image[-1][0].isFinished():
-            self.queue_updates_image = self.queue_updates_image[-1:]
-            self.queue_updates_image[-1][0].start()
-        else:
-            self.queue_updates_image = []
-
     @QtCore.Slot(colour.LUT3D)
     def start_update_image(self, lut):
-        # TODO: quit running thread.
-        thread, worker = QtCore.QThread(), WorkerLut(self.img_base, lut)
-        self.queue_updates_image.append((thread, worker, str(id(worker))))
-
-        worker.moveToThread(thread)
-        worker.finished.connect(thread.quit)
-        # worker.finished.connect(worker.deleteLater)
-        worker.finished.connect(self.update_image_async)
-        # thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(self.start_next_update)
-        thread.started.connect(worker.run)
-
-        if len(self.queue_updates_image) == 1:
-            self.start_next_update()
+        self.queue_updates_image.start_job(self.img_base, lut)
