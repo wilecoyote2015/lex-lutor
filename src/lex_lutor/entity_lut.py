@@ -18,6 +18,7 @@ import sys
 from lex_lutor.node_lut import NodeLut
 from datetime import datetime, timedelta
 
+# TODO: shortcut to toggle node hover selection mode between derived and non-derived.
 
 # TODO: Handle press / release of shift while in preview
 
@@ -136,6 +137,44 @@ class WorkerTransform(QObject):
             print(f'Error during transformation of node: \n {e}')
 
 
+class WorkerGetNodesSelectionDerived(QObject):
+    finished = Signal(list)
+    progress = Signal(int)
+
+    def __init__(self, lut, nodes_selection_base, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.lut = lut
+        self.nodes_selection_base = nodes_selection_base
+
+    def run(self, ):
+        self.finished.emit(self.lut.get_nodes_select_derived(self.nodes_selection_base))
+
+
+class WorkerGetNodesSelectionDerivedHover(QObject):
+    finished = Signal(tuple)
+    progress = Signal(int)
+
+    def __init__(self, lut, nodes_selection_base, nodes_other, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.lut = lut
+        self.nodes_selection_base = nodes_selection_base
+        self.nodes_other = nodes_other
+        print(nodes_selection_base)
+        print(nodes_other)
+
+    def run(self, ):
+        self.finished.emit(
+            {
+                *self.lut.get_nodes_select_derived(self.nodes_selection_base),
+                *self.nodes_selection_base,
+                *self.nodes_other
+
+            }
+        )
+
+
 class Lut3dEntity(Qt3DCore.QComponent):
     lut_changed = QtCore.Signal(colour.LUT3D)
     start_preview_weights = QtCore.Signal(colour.LUT3D)
@@ -178,6 +217,18 @@ class Lut3dEntity(Qt3DCore.QComponent):
             self.apply_calculated_transorm_to_nodes_dragging_change
         )
 
+        self.queue_nodes_derived_selection = JobQueue(
+            WorkerGetNodesSelectionDerived,
+            self.apply_selection_nodes_derived
+        )
+
+        self.queue_nodes_derived_selection_hover_pixel = JobQueue(
+            WorkerGetNodesSelectionDerivedHover,
+            self.start_preview_hover_pixel
+        )
+
+        self.hovering_pixels = False
+
         self.selection_base_changed.connect(self.select_nodes_derived)
 
         self.parent_gui.gui_parent.widget_menu.slider_h.valueChanged.connect(self.select_nodes_derived)
@@ -197,6 +248,9 @@ class Lut3dEntity(Qt3DCore.QComponent):
         self.parent_gui.gui_parent.widget_menu.slider_v.sliderReleased.connect(self.slot_stop_preview_selection_slider)
         self.parent_gui.gui_parent.widget_menu.slider_c.sliderReleased.connect(self.slot_stop_preview_selection_slider)
         self.parent_gui.gui_parent.widget_menu.slider_l.sliderReleased.connect(self.slot_stop_preview_selection_slider)
+
+        self.parent_gui.gui_parent.widget_menu.preview_pixel_hovered.connect(self.preview_selection_pixel)
+        self.parent_gui.gui_parent.widget_menu.stop_preview_pixel_hovered.connect(self.slot_stop_hover_pixel)
 
         # self.time_last_change = datetime.now()
         # self.timedelta_update = timedelta(milliseconds=100)
@@ -246,6 +300,14 @@ class Lut3dEntity(Qt3DCore.QComponent):
     def nodes_selection_base(self):
         def fn(node, result_):
             if node.is_selected_base:
+                result_.append(node)
+
+        return self.iter_nodes(fn)
+
+    @property
+    def nodes_selection(self):
+        def fn(node, result_):
+            if node.is_selected:
                 result_.append(node)
 
         return self.iter_nodes(fn)
@@ -370,6 +432,8 @@ class Lut3dEntity(Qt3DCore.QComponent):
     def slot_start_hover_node(self, indices_node):
         # TODO: consider derived selection:
         #   build simulated nodes of derived selection from nodes_preview and show them.
+
+        # TODO: use worker queue for threading
         if self.parent_gui.mode_transform_current is None:
             self.preview_weights_on_ = True
 
@@ -417,6 +481,10 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
     def get_nodes_select_derived(self, nodes_selection_base):
         # TODO: Must use multiprocessing with own queue
+        # FIXME: Selection by Hue does not work correctly: in example image,
+        #   select bright green bushes with low hue tolerance,
+        #   and red elements are selected, too, which lie far away in hue range.
+        #
         gui_2d = self.parent_gui.gui_parent.widget_menu
         band_h = gui_2d.slider_h.value()
         band_s = gui_2d.slider_s.value()
@@ -425,7 +493,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
         band_l = gui_2d.slider_l.value()
 
         # Nothing to do if all nodes are already in base selection.
-        if len(nodes_selection_base) == self.size ** 3 or band_h == 0 and band_s == 0 and band_v == 0 and band_c == 0 and band_l == 0:
+        if len(nodes_selection_base) == self.size ** 3 or not nodes_selection_base or band_h == 0 and band_s == 0 and band_v == 0 and band_c == 0 and band_l == 0:
             return []
         else:
             # For now, sliders are only one value. convert to min max
@@ -512,8 +580,16 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
     @QtCore.Slot()
     def select_nodes_derived(self):
-        nodes_select = self.get_nodes_select_derived(self.nodes_selection_base)
+        # Start a selection process.
+        #   The actually selected nodes will correspond to the
+        self.queue_nodes_derived_selection.start_job(self, self.nodes_selection_base)
+        # nodes_select = self.get_nodes_select_derived(self.nodes_selection_base)
 
+        # TODO: use the worker.
+        #   On worker finish, call apply_selection_nodes_derived()
+
+    @QtCore.Slot()
+    def apply_selection_nodes_derived(self, nodes_select):
         def fn(node, result_):
             if node in nodes_select or node in self.nodes_selection_base:
                 node.select(True)
@@ -534,6 +610,11 @@ class Lut3dEntity(Qt3DCore.QComponent):
             if indices_node == self.indices_node_preview_current:
                 self.preview_weights_on_ = False
                 self.stop_preview_weights_node_if_not_always_on()
+
+    @QtCore.Slot()
+    def slot_stop_hover_pixel(self):
+        self.hovering_pixels = False
+        self.stop_preview_weights_node_if_not_always_on()
 
     def stop_preview_weights_node_if_not_always_on(self):
         if not self.preview_weights_on:
@@ -590,6 +671,37 @@ class Lut3dEntity(Qt3DCore.QComponent):
             raise NotImplementedError
 
         return result
+
+    @QtCore.Slot()
+    def preview_selection_pixel(self, value_pixel, expand_selection, select_closest):
+        nodes_pixel = self.find_nearest_nodes_pixels(np.asarray(value_pixel.toTuple())[
+                                                         np.newaxis, ...]) if select_closest else self.find_nodes_influencing_pixel(
+            value_pixel)
+
+        if self.preview_weights_on:
+            nodes_preview = {*nodes_pixel}
+
+            if expand_selection:
+                nodes_preview = nodes_preview.union(self.nodes_selection)
+
+            self.queue_nodes_derived_selection_hover_pixel.start_job(
+                self,
+                nodes_pixel,
+                nodes_preview
+            )
+            self.hovering_pixels = True
+
+        #     self.prev
+        # pass
+
+    def start_preview_hover_pixel(self, nodes):
+        # only of still hovering. Prevents update after mouse having left the image view
+        # if queue job is finished after leaving and after job to preview currently selected nodes.
+        if self.hovering_pixels:
+            lut_use = self.make_lut_preview_selection([node.indices_lut for node in nodes])
+            self.start_preview_weights.emit(lut_use)
+        else:
+            pass
 
     @QtCore.Slot(int, float)
     def transform_dragging(self, mode, distance):

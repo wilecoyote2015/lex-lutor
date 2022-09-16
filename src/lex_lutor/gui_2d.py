@@ -26,16 +26,12 @@ INTERPOLATORS = {
     INTER_TETRAHEDRAL: colour.algebra.table_interpolation_tetrahedral,
 }
 
+# TODO: double right click on image to deselect affecting nodes (respect ctrl!)
 
 class LabelClickable(QtWidgets.QLabel):
-    double_clicked = Signal(QtGui.QMouseEvent)
-
-    def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent) -> None:
-        self.double_clicked.emit(event)
-
-
-class LabelClickable(QtWidgets.QLabel):
-    double_clicked = Signal(QtGui.QMouseEvent)
+    double_clicked = Signal(QtGui.QMouseEvent, tuple)
+    pixel_hovered = Signal(QtGui.QMouseEvent, tuple)
+    left = Signal(QtGui.QMouseEvent)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -47,11 +43,35 @@ class LabelClickable(QtWidgets.QLabel):
         sizePolicy.setHeightForWidth(True)
         self.setSizePolicy(sizePolicy)
 
+        self.pos_pixel_hovered_last = (0, 0)
+        self.setMouseTracking(True)
+
+    def get_pos_pixel_mouse(self, x_mouse, y_mouse):
+        pos_image = self.mapFromParent(self.pos())
+        # print(pos_image)
+
+        pos_pixel = [
+            x_mouse - pos_image.y(),
+            y_mouse - pos_image.x(),
+        ]
+        return pos_pixel
+
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
+        # TODO: modifier
+        pos_pixel = self.get_pos_pixel_mouse(event.x(), event.y())
+        if self.pos_pixel_hovered_last != pos_pixel:
+            self.pixel_hovered.emit(event, pos_pixel)
+            self.pos_pixel_hovered_last = pos_pixel
+
     def hasHeightForWidth(self) -> bool:
         return True
 
     def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent) -> None:
-        self.double_clicked.emit(event)
+        pos_pixel = self.get_pos_pixel_mouse(event.x(), event.y())
+        self.double_clicked.emit(event, pos_pixel)
+
+    def leaveEvent(self, event: QtCore.QEvent) -> None:
+        self.left.emit(event)
 
     def heightForWidth(self, width: int) -> int:
         # FIXME: does not work somehow.
@@ -104,6 +124,9 @@ class WorkerLut(QObject):
 class MenuWidget(QtWidgets.QWidget):
     select_nodes_affecting_pixel = Signal(QVector3D, bool)
     select_node_closest_pixel = Signal(QVector3D, bool)
+    # TODO: stop preview on image leave
+    preview_pixel_hovered = Signal(QVector3D, bool, bool)
+    stop_preview_pixel_hovered = Signal()
 
     def __init__(self, parent=None):
         super(MenuWidget, self).__init__(parent)
@@ -128,7 +151,9 @@ class MenuWidget(QtWidgets.QWidget):
 
         self.setLayout(layout)
 
-        self.label_image.double_clicked.connect(self.mouseDoubleClickEvent)
+        self.label_image.double_clicked.connect(self.pixelDoubleClicked)
+        self.label_image.pixel_hovered.connect(self.pixel_hovered)
+        self.label_image.left.connect(self.pixel_hover_left)
 
 
     def build_menu(self):
@@ -217,30 +242,40 @@ class MenuWidget(QtWidgets.QWidget):
 
         self.interpolation_matrix = result
 
-    # @QtCore.Slot(QtGui.QMouseEvent)
-    def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent) -> None:
+    def get_value_pixel_mouse(self, x_mouse, y_mouse):
+        return self.img_base[
+            y_mouse,
+            x_mouse
+        ]
+
+    @QtCore.Slot(QtGui.QMouseEvent, tuple)
+    def pixel_hovered(self, event: QtGui.QMouseEvent, pos_pixel) -> None:
+        expand_selection = event.modifiers() in (
+            QtCore.Qt.Modifier.SHIFT,
+            QtCore.Qt.Modifier.SHIFT + QtCore.Qt.Modifier.CTRL,
+        )
+        select_closest = event.modifiers() in (
+            QtCore.Qt.Modifier.CTRL,
+            QtCore.Qt.Modifier.SHIFT + QtCore.Qt.Modifier.CTRL,
+        )
+
+        pixel_image = self.get_value_pixel_mouse(*pos_pixel)
+
+        self.preview_pixel_hovered.emit(QVector3D(*pixel_image), expand_selection, select_closest)
+
+    @QtCore.Slot(QtGui.QMouseEvent)
+    def pixel_hover_left(self, event):
+        self.stop_preview_pixel_hovered.emit()
+
+    @QtCore.Slot(QtGui.QMouseEvent, tuple)
+    def pixelDoubleClicked(self, event: QtGui.QMouseEvent, pos_pixel) -> None:
         # TODO / FIXME: When proper image display scaling is implemented,
         #   the coords do not correspond to pixel coords directly anymore (maybe the don't even nof with display scaling?)
         #   hence, transorfmation must be performed. Is this done using qpainter?
         #
 
         # Fixme: Not possible to get relative position in widget?
-        # pos_image = self.label_image.pos()
-        pos_image = self.label_image.mapFromParent(self.label_image.pos())
-        # print(pos_image)
-
-        pos_pixel = [
-            event.y() - pos_image.y(),
-            event.x() - pos_image.x(),
-        ]
-
-        # print(pos_pixel)
-
-        pixel_image = self.img_base[
-            pos_pixel[0],
-            pos_pixel[1]
-
-        ]
+        pixel_image = self.get_value_pixel_mouse(*pos_pixel)
 
         # TODO: STRG makes only one
         expand_selection = event.modifiers() in (
@@ -251,7 +286,6 @@ class MenuWidget(QtWidgets.QWidget):
             QtCore.Qt.Modifier.CTRL,
             QtCore.Qt.Modifier.SHIFT + QtCore.Qt.Modifier.CTRL,
         )
-
 
         # image is float, so pixel is coords.
         if select_closest:
