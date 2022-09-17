@@ -12,6 +12,7 @@ from PySide6.Qt3DRender import Qt3DRender
 import sys
 from lex_lutor.entity_lut import Lut3dEntity
 from lex_lutor.constants import color_spaces_components_transform
+from lex_lutor.dialogs import get_color_space
 
 
 # TODO: can the signals and slots be moved to entity_lut?
@@ -91,7 +92,20 @@ class CubeView(Qt3DExtras.Qt3DWindow):
         self.mode_transform_current = None
         self.coordinates_mouse_event_start = QtCore.QPoint(0, 0)
 
+    def delete_children(self, parent):
+        for child in parent.childNodes():
+            self.delete_children(child)
+            child.deleteLater()
+
     def load_lut(self, lut: colour.LUT3D):
+        # FIXME: with new lut, trigger new preview
+        if self.entity_lut is not None:
+            # self.root_entity.removeComponent(self.entity_lut)
+            self.delete_children(self.entity_lut)
+            self.entity_lut.deleteLater()
+
+            # del self.entity_lut
+
         self.entity_lut = Lut3dEntity(lut, self)
         # TODO: remove old lut
         self.root_entity.addComponent(self.entity_lut)

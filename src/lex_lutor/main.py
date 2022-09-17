@@ -10,7 +10,7 @@ from PySide6.Qt3DInput import Qt3DInput
 from PySide6.Qt3DRender import Qt3DRender
 # from PySide6 import Qt3DCore, Qt3DExtras, Qt3DInput, Qt3DRender
 import sys
-from lex_lutor.main_widget import MainWidget
+from lex_lutor.main_widget import MainWidget, MainWindow
 
 
 # TODO: Node objects should store their index in the lut array.
@@ -31,7 +31,7 @@ from lex_lutor.main_widget import MainWidget
 if __name__ == '__main__':
     app = QApplication(sys.argv)
 
-    w = MainWidget()
+    w = MainWindow()
 
     # lut = colour.io.read_LUT('/home/bjoern/Pictures/hald-clut/HaldCLUT/own/provia_profiled_xt3.cube')
     # lut = colour.io.read_LUT('/home/bjoern/Pictures/hald-clut/HaldCLUT/own/provia_profiled_xt3.cube')
@@ -39,9 +39,9 @@ if __name__ == '__main__':
     path_image = '/home/bjoern/PycharmProjects/darktabe_hald_generator/samples/provia/DSCF0326.JPG'
 
     lut = colour.LUT3D(colour.LUT3D.linear_table(9))
-    w.window_3d.load_lut(lut)
-    w.window_3d.entity_lut.color_space = colour.models.RGB_COLOURSPACE_ADOBE_RGB1998
-    w.widget_menu.load_image(path_image, lut)
+    w.main_widget.window_3d.load_lut(lut)
+    # w.main_widget.window_3d.entity_lut.color_space = colour.models.RGB_COLOURSPACE_ADOBE_RGB1998
+    # w.main_widget.widget_menu.load_image(path_image)
 
     # w.show()
     # w.resize(1200, 800)

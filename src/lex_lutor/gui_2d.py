@@ -14,9 +14,9 @@ import sys
 from lex_lutor.job_queue import JobQueue
 from tqdm import tqdm
 from scipy.sparse import csc_matrix
+from lex_lutor.constants import color_spaces
 
-# TODO: Async LUT trafo!
-#   See https://realpython.com/python-pyqt-qthread/
+# TODO / FIXME: use base img color space lut everywhere where needed!
 
 INTER_TRILINEAR = 'Trilinear'
 INTER_TETRAHEDRAL = 'Tetrahedral'
@@ -25,6 +25,7 @@ INTERPOLATORS = {
     INTER_TRILINEAR: colour.algebra.table_interpolation_trilinear,
     INTER_TETRAHEDRAL: colour.algebra.table_interpolation_tetrahedral,
 }
+
 
 # TODO: double right click on image to deselect affecting nodes (respect ctrl!)
 
@@ -94,26 +95,33 @@ class SliderFloat(QtWidgets.QSlider):
     def value(self):
         return super().value() / self.max_
 
-
 class WorkerLut(QObject):
     finished = Signal(QtGui.QImage, str)
     progress = Signal(int)
 
-    def __init__(self, image: np.ndarray, lut: colour.LUT3D, *args, **kwargs):
+    def __init__(self, image_color_space_lut: np.ndarray, lut: colour.LUT3D, colour_space_lut, color_space_display,
+                 *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.image = image
+        self.image_color_space_lut = image_color_space_lut
         self.lut = lut
+        self.colour_space_lut = colour_space_lut
+        self.color_space_display = color_space_display
 
     def run(self, ):
         """Long-running task."""
-        image_transformed = self.lut.apply(self.image)
-        img_uint = (image_transformed * 255).astype(np.uint8, order='c')
+        image_transformed = self.lut.apply(self.image_color_space_lut)
+
+        if not self.colour_space_lut == self.color_space_display:
+            image_transformed = colour.models.RGB_to_RGB(image_transformed, self.colour_space_lut,
+                                                         self.color_space_display)
+
+        img_uint = (np.clip(image_transformed, 0, 1) * 255).astype(np.uint8, order='c')
         qimage = QtGui.QImage(
             img_uint,
-            self.image.shape[1],
-            self.image.shape[0],
-            self.image.shape[1] * 3,
+            self.image_color_space_lut.shape[1],
+            self.image_color_space_lut.shape[0],
+            self.image_color_space_lut.shape[1] * 3,
             QtGui.QImage.Format_RGB888
         )
 
@@ -124,23 +132,25 @@ class WorkerLut(QObject):
 class MenuWidget(QtWidgets.QWidget):
     select_nodes_affecting_pixel = Signal(QVector3D, bool)
     select_node_closest_pixel = Signal(QVector3D, bool)
-    # TODO: stop preview on image leave
     preview_pixel_hovered = Signal(QVector3D, bool, bool)
     stop_preview_pixel_hovered = Signal()
+    color_space_lut_changed = Signal(colour.models.RGB_Colourspace)
 
     def __init__(self, parent=None):
         super(MenuWidget, self).__init__(parent)
         self.interpolation_matrix = None
-        button_test2 = QPushButton('test2')
 
         self.label_image = LabelClickable()
         self.label_image.setScaledContents(True)
         self.img_base = None
+        self.img_base_colorspace_lut = None
 
         self.queue_updates_image = JobQueue(
             WorkerLut,
             self.update_image_async,
         )
+
+        self.lut_last_update = colour.LUT3D.linear_table(3)
 
         menu = self.build_menu()
 
@@ -155,6 +165,17 @@ class MenuWidget(QtWidgets.QWidget):
         self.label_image.pixel_hovered.connect(self.pixel_hovered)
         self.label_image.left.connect(self.pixel_hover_left)
 
+    @property
+    def color_space_image(self):
+        return color_spaces[self.combo_color_space_image.currentText()]
+
+    @property
+    def color_space_lut(self):
+        return color_spaces[self.combo_color_space_lut.currentText()]
+
+    @property
+    def color_space_display(self):
+        return color_spaces[self.combo_color_space_display.currentText()]
 
     def build_menu(self):
         self.slider_h = SliderFloat(QtCore.Qt.Horizontal)
@@ -165,30 +186,90 @@ class MenuWidget(QtWidgets.QWidget):
 
         self.layout_menu = QVBoxLayout()
 
-        self.layout_menu.addWidget(self.slider_h)
-        self.layout_menu.addWidget(self.slider_s)
-        self.layout_menu.addWidget(self.slider_v)
-        self.layout_menu.addWidget(self.slider_c)
-        self.layout_menu.addWidget(self.slider_l)
+        # self.layout_menu.addWidget(self.slider_h)
+        # self.layout_menu.addWidget(self.slider_s)
+        # self.layout_menu.addWidget(self.slider_v)
+        # self.layout_menu.addWidget(self.slider_c)
+        # self.layout_menu.addWidget(self.slider_l)
+
+        self.layout_menu.addLayout(self.make_layout_with_label(self.slider_h, 'H'))
+        self.layout_menu.addLayout(self.make_layout_with_label(self.slider_s, 'S'))
+        self.layout_menu.addLayout(self.make_layout_with_label(self.slider_v, 'V'))
+        self.layout_menu.addLayout(self.make_layout_with_label(self.slider_c, 'C'))
+        self.layout_menu.addLayout(self.make_layout_with_label(self.slider_l, 'L'))
+
+        self.combo_color_space_image = QtWidgets.QComboBox()
+        self.combo_color_space_image.addItems(list(color_spaces.keys()))
+        self.combo_color_space_image.setCurrentIndex(0)
+
+        self.combo_color_space_lut = QtWidgets.QComboBox()
+        self.combo_color_space_lut.addItems(list(color_spaces.keys()))
+        self.combo_color_space_lut.setCurrentIndex(0)
+
+        self.combo_color_space_display = QtWidgets.QComboBox()
+        self.combo_color_space_display.addItems(list(color_spaces.keys()))
+        self.combo_color_space_display.setCurrentIndex(0)
+
+        # self.layout_menu.addWidget(self.combo_color_space_image)
+        # self.layout_menu.addWidget(self.combo_color_space_lut)
+        # self.layout_menu.addWidget(self.combo_color_space_display)
+        self.layout_menu.addLayout(self.make_layout_with_label(self.combo_color_space_image, 'Image'))
+        self.layout_menu.addLayout(self.make_layout_with_label(self.combo_color_space_lut, 'LUT'))
+        self.layout_menu.addLayout(self.make_layout_with_label(self.combo_color_space_display, 'Display'))
+
+        self.combo_color_space_lut.currentTextChanged.connect(self.slot_color_space_lut_changed)
+        self.combo_color_space_image.currentTextChanged.connect(self.slot_color_space_image_changed)
+        self.combo_color_space_display.currentTextChanged.connect(self.slot_color_space_display_changed)
+        # self.combo_color_space_lut.currentTextChanged.connect(self.slot_color_space_lut_changed)
+
+        # TODO: update image display on color space change
 
         return self.layout_menu
 
+    def set_img_base_colorspace_lut(self):
+        self.img_base_colorspace_lut = colour.models.RGB_to_RGB(
+            self.img_base,
+            self.color_space_image,
+            self.color_space_lut
+        )
+
+    def make_layout_with_label(self, widget, text_label):
+        hbox = QHBoxLayout()
+
+        label = QtWidgets.QLabel(text_label)
+
+        hbox.addWidget(label)
+        hbox.addWidget(widget)
+
+        return hbox
+
     @QtCore.Slot(str)
-    def load_image(self, path_image, lut):
+    def load_image(self, path_image):
+
+        # TODO: infer color space from image.
+        #   https://ninedegreesbelow.com/photography/embedded-color-space-information.html
         image = colour.io.read_image(
             path_image
         )
+        # TODO: dynamic image resize
         aspect = image.shape[0] / image.shape[1]
-        width = 400
+        width = 500
         height = int(width * aspect)
         self.img_base = cv2.resize(image, (width, height))
+        # TODO: support non-rgb spaces
+        self.set_img_base_colorspace_lut()
         # TODO:Color management. https://doc.qt.io/qt-6/qcolorspace.html
-        img_uint = (self.img_base * 255).astype(np.uint8, order='c')
+        img_color_space_display = colour.models.RGB_to_RGB(
+            self.img_base,
+            self.color_space_image,
+            self.color_space_display
+        )
+        img_uint = (img_color_space_display * 255).astype(np.uint8, order='c')
         qimage = QtGui.QImage(
             img_uint,
-            self.img_base.shape[1],
-            self.img_base.shape[0],
-            self.img_base.shape[1] * 3,
+            img_color_space_display.shape[1],
+            img_color_space_display.shape[0],
+            img_color_space_display.shape[1] * 3,
             QtGui.QImage.Format_RGB888
         )
         self.label_image.setPixmap(
@@ -196,60 +277,16 @@ class MenuWidget(QtWidgets.QWidget):
 
         )
 
-        # TODO: handle case that no lut loaded.
-        # TODO: Interpolation from app
-        # self.make_interpolation_matrix(lut, INTER_TRILINEAR)
-
-    @QtCore.Slot()
-    def make_interpolation_matrix(self, lut, interpolation):
-        if interpolation not in INTERPOLATORS:
-            raise ValueError(f'Interpolation {interpolation} not supported.')
-        # feature matrix with order of permutation: r, g, b
-
-        pixels = self.img_base.reshape((self.img_base.shape[0] * self.img_base.shape[1], self.img_base.shape[2]))
-        print('generating design matrix')
-        # design_matrix_new = np.zeros((pixels_references.shape[0], size * size * size), pixels_references.dtype)
-        data = np.ndarray((0,), dtype=pixels.dtype)
-        indices_rows = np.ndarray((0,), dtype=int)
-        indices_columns = np.ndarray((0,), dtype=int)
-
-        lut_empty = colour.LUT3D(table=np.zeros((lut.size, lut.size, lut.size, 3), dtype=pixels.dtype), size=lut.size)
-        indices_pixels = np.arange(pixels.shape[0])
-
-        idx_col_design_matrix = 0
-        for idx_r in tqdm(range(lut.size)):
-            for idx_g in range(lut.size):
-                for idx_b in range(lut.size):
-                    lut_empty.table[idx_r, idx_g, idx_b] = 1.
-                    weights_pixels = lut_empty.apply(
-                        pixels,
-                        interpolator=INTERPOLATORS[interpolation]
-                    )[..., 0]
-                    bool_weights = weights_pixels != 0
-                    weights_pixels_non_zero = weights_pixels[bool_weights]
-                    data = np.concatenate((data, weights_pixels_non_zero))
-                    indices_rows = np.concatenate((indices_rows, indices_pixels[bool_weights]))
-                    indices_columns = np.concatenate(
-                        (indices_columns, np.full((weights_pixels_non_zero.shape[0],), idx_col_design_matrix)))
-                    lut_empty.table[idx_r, idx_g, idx_b] = 0.
-                    idx_col_design_matrix += 1
-
-        result = csc_matrix(
-            (data,
-             (indices_rows, indices_columns)),
-            shape=(pixels.shape[0], lut.size ** 3)
-        )
-
-        self.interpolation_matrix = result
-
-    def get_value_pixel_mouse(self, x_mouse, y_mouse):
-        return self.img_base[
+    def get_value_pixel_mouse_space_lut(self, x_mouse, y_mouse):
+        return self.img_base_colorspace_lut[
             y_mouse,
             x_mouse
         ]
 
     @QtCore.Slot(QtGui.QMouseEvent, tuple)
     def pixel_hovered(self, event: QtGui.QMouseEvent, pos_pixel) -> None:
+        if self.img_base_colorspace_lut is None:
+            return
         expand_selection = event.modifiers() in (
             QtCore.Qt.Modifier.SHIFT,
             QtCore.Qt.Modifier.SHIFT + QtCore.Qt.Modifier.CTRL,
@@ -259,7 +296,7 @@ class MenuWidget(QtWidgets.QWidget):
             QtCore.Qt.Modifier.SHIFT + QtCore.Qt.Modifier.CTRL,
         )
 
-        pixel_image = self.get_value_pixel_mouse(*pos_pixel)
+        pixel_image = self.get_value_pixel_mouse_space_lut(*pos_pixel)
 
         self.preview_pixel_hovered.emit(QVector3D(*pixel_image), expand_selection, select_closest)
 
@@ -275,7 +312,7 @@ class MenuWidget(QtWidgets.QWidget):
         #
 
         # Fixme: Not possible to get relative position in widget?
-        pixel_image = self.get_value_pixel_mouse(*pos_pixel)
+        pixel_image = self.get_value_pixel_mouse_space_lut(*pos_pixel)
 
         # TODO: STRG makes only one
         expand_selection = event.modifiers() in (
@@ -300,6 +337,25 @@ class MenuWidget(QtWidgets.QWidget):
             QtGui.QPixmap(image_updated)
         )
 
+    @QtCore.Slot()
+    def slot_color_space_image_changed(self):
+        self.set_img_base_colorspace_lut()
+        self.start_update_image(self.lut_last_update)
+
+    @QtCore.Slot()
+    def slot_color_space_display_changed(self):
+        self.start_update_image(self.lut_last_update)
+
+    @QtCore.Slot()
+    def slot_color_space_lut_changed(self):
+        self.color_space_lut_changed.emit(self.color_space_lut)
+        self.set_img_base_colorspace_lut()
+        self.start_update_image(self.lut_last_update)
+
     @QtCore.Slot(colour.LUT3D)
     def start_update_image(self, lut):
-        self.queue_updates_image.start_job(self.img_base, lut)
+        if self.img_base_colorspace_lut is None:
+            return
+        self.lut_last_update = lut
+        self.queue_updates_image.start_job(self.img_base_colorspace_lut, lut, self.color_space_lut,
+                                           self.color_space_display)

@@ -188,8 +188,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
         self.mesh_node = None
         self.picker = Qt3DRender.QObjectPicker(self)
         self.nodes_lut = None
-        self.color_space: colour.models.RGB_Colourspace = None
-
+        self.color_space = self.parent_gui.gui_parent.widget_menu.color_space_lut
         # Nodes that represent the base selection before deriving by expansion by radius, hue etc.
         #   This selection contains all nodes that are either clicked directly or are picked in image preview.
         #   TODO: Draw them in other color than derived selection
@@ -209,6 +208,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
         self.parent_gui.cancel_transform.connect(self.cancel_transform)
         self.parent_gui.accept_transform.connect(self.accept_transform)
 
+        # TODO: this should be GUI code
         self.preview_weights_on_ = False
         self.preview_weights_always_on = False
 
@@ -251,6 +251,10 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
         self.parent_gui.gui_parent.widget_menu.preview_pixel_hovered.connect(self.preview_selection_pixel)
         self.parent_gui.gui_parent.widget_menu.stop_preview_pixel_hovered.connect(self.slot_stop_hover_pixel)
+
+        self.parent_gui.gui_parent.widget_menu.color_space_lut_changed.connect(self.set_color_space)
+
+        self.lut_changed.emit(self.lut)
 
         # self.time_last_change = datetime.now()
         # self.timedelta_update = timedelta(milliseconds=100)
@@ -295,6 +299,11 @@ class Lut3dEntity(Qt3DCore.QComponent):
         self.iter_nodes(fn)
 
         return result
+
+    @QtCore.Slot()
+    def set_color_space(self, color_space):
+        self.color_space = color_space
+        self.select_nodes_derived()
 
     @property
     def nodes_selection_base(self):
@@ -668,6 +677,8 @@ class Lut3dEntity(Qt3DCore.QComponent):
             else:
                 raise NotImplementedError
         else:
+            print(color_space_source, color_space_target)
+            # TODO / FIXME: seems Adobe RGB is no instance of RGB color space?
             raise NotImplementedError
 
         return result
