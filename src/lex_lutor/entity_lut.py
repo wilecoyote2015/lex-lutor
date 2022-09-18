@@ -727,7 +727,7 @@ class Lut3dEntity(Qt3DCore.QComponent):
                                                          np.newaxis, ...]) if select_closest else self.find_nodes_influencing_pixel(
             value_pixel)
 
-        if self.preview_weights_on:
+        if self.preview_weights_always_on:
             nodes_preview = {*nodes_pixel}
 
             if expand_selection:

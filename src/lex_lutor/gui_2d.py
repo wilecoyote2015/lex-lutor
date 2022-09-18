@@ -95,8 +95,9 @@ class SliderFloat(QRangeSlider):
 
         self.setRange(0, self.max_)
 
-        self.setValue((0, 1))
+        self.setValue((0, 0))
         self.setBarIsRigid(False)
+        self._singleStep = 0.
 
     # def setValue(self, value: int) -> None:
     #     self.valueChanged.emit(value / self.max_)
