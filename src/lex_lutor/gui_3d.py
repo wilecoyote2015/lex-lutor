@@ -125,6 +125,9 @@ class CubeView(Qt3DExtras.Qt3DWindow):
         # TODO: cancel etc. must be invoked by proper signals that are emitted here.
         # TODO: Better move all this to entity_lut to reduce complexity
         key = event.key()
+        modifiers = event.modifiers()
+
+        print(modifiers)
 
         if key == QtCore.Qt.Key_Escape:
             self.cancel_transform.emit()
@@ -139,9 +142,9 @@ class CubeView(Qt3DExtras.Qt3DWindow):
         if key == QtCore.Qt.Key.Key_Space:
             self.entity_lut.toggle_preview_selection_always_on()
 
-        elif key in color_spaces_components_transform:
+        elif (key, int(modifiers)) in color_spaces_components_transform:
             # TODO: Better send signals to start and stop transform?
-            self.mode_transform_current = key
+            self.mode_transform_current = (key, int(modifiers))
             self.coordinates_mouse_event_start = QCursor.pos()
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:

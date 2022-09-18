@@ -10,14 +10,14 @@ KEY_EXPOSURE = Qt.Key_E
 
 # color space and color space dimension along which to move a node
 color_spaces_components_transform = {
-    Qt.Key_R: (None, 0),
-    Qt.Key_G: (None, 1),
-    Qt.Key_B: (None, 2),
-    Qt.Key_H: (HSV, 0),
-    Qt.Key_S: (HSL, 1),
-    Qt.Key_V: (HSV, 2),
-    Qt.Key_L: (HSL, 2),
-    Qt.Key_C: (HCL, 1)
+    (Qt.Key_R, Qt.NoModifier): (None, 0),
+    (Qt.Key_G, Qt.NoModifier): (None, 1),
+    (Qt.Key_B, Qt.NoModifier): (None, 2),
+    (Qt.Key_H, Qt.NoModifier): (HSV, 0),
+    (Qt.Key_S, Qt.NoModifier): (HSV, 1),
+    (Qt.Key_V, Qt.NoModifier): (HSV, 2),
+    (Qt.Key_S, int(Qt.Modifier.SHIFT)): (HSL, 1),
+    (Qt.Key_L, Qt.NoModifier): (HSL, 2)
 
 }
 

@@ -15,6 +15,8 @@ from lex_lutor.job_queue import JobQueue
 from tqdm import tqdm
 from scipy.sparse import csc_matrix
 from lex_lutor.constants import color_spaces
+from superqt import QRangeSlider
+from typing import Generic, List, Sequence, Tuple, TypeVar, Union
 
 # TODO / FIXME: use base img color space lut everywhere where needed!
 
@@ -81,19 +83,80 @@ class LabelClickable(QtWidgets.QLabel):
         # return int(width * aspect_pixmap)
         return aspect_pixmap * width
 
-class SliderFloat(QtWidgets.QSlider):
-    max_ = 20
+
+class SliderFloat(QRangeSlider):
+    # TODO: Pushable: left handle pushes right one and vice versa.
+    # TODO: styling: bar left from first handle must be colored, too.
+    # TODO: handles should be only half, so that range 0 still makes both handles draggable.
+    max_ = 50
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.setRange(0, self.max_)
 
-    def setValue(self, value: int) -> None:
-        self.valueChanged.emit(value / self.max_)
+        self.setValue((0, 1))
+        self.setBarIsRigid(False)
+
+    # def setValue(self, value: int) -> None:
+    #     self.valueChanged.emit(value / self.max_)
 
     def value(self):
-        return super().value() / self.max_
+        return (super().value()[0] / self.max_, super().value()[1] / self.max_)
+
+    def setSliderPosition(self, pos: Union[float, Sequence[float]], index=None) -> None:
+        """Set current position of the handles with a sequence of integers.
+
+        If `pos` is a sequence, it must have the same length as `value()`.
+        If it is a scalar, index will be
+        """
+        if isinstance(pos, (list, tuple)):
+            val_len = len(self.value())
+            if len(pos) != val_len:
+                msg = f"'sliderPosition' must have same length as 'value()' ({val_len})"
+                raise ValueError(msg)
+            pairs = list(enumerate(pos))
+        else:
+            pairs = [(self._pressedIndex if index is None else index, pos)]
+
+        indices_handles_dragged, positions = zip(*pairs)
+
+        for idx, position in pairs:
+            # bound to min/max value
+            self._position[idx] = self._bound(position, idx)
+
+        # the dragged handle may shift surrounding hanldes
+        # for idx in range(len(self._position)):
+        #     if idx < self._pressedIndex:
+
+        for idx_handle_dragged, position_handle_dragged in pairs:
+            for idx_other in range(len(self._position)):
+                position_other = self._position[idx_other]
+                if idx_other not in indices_handles_dragged:
+                    if idx_other < idx_handle_dragged:
+                        self._position[idx_other] = min(
+                            position_handle_dragged - (idx_handle_dragged - idx_other) * self.singleStep(),
+                            position_other
+                        )
+                    elif idx_other > idx_handle_dragged:
+                        self._position[idx_other] = max(
+                            position_handle_dragged + (idx_other - idx_handle_dragged) * self.singleStep(),
+                            position_other
+                        )
+
+        self._doSliderMove()
+
+    def _bound(self, value, index=None):
+        if isinstance(value, (list, tuple)):
+            return type(value)(self._bound(v) for v in value)
+        pos = super()._bound(value)
+        if index is not None:
+            return np.clip(
+                pos,
+                self.singleStep() * index + self._minimum,
+                self._maximum - self.singleStep() * (len(self._position) - 1 - index),
+            )
+        return self._type_cast(pos)
 
 class WorkerLut(QObject):
     finished = Signal(QtGui.QImage, str)
@@ -179,23 +242,23 @@ class MenuWidget(QtWidgets.QWidget):
 
     def build_menu(self):
         self.slider_h = SliderFloat(QtCore.Qt.Horizontal)
-        self.slider_s = SliderFloat(QtCore.Qt.Horizontal)
+        self.slider_s_hsv = SliderFloat(QtCore.Qt.Horizontal)
         self.slider_v = SliderFloat(QtCore.Qt.Horizontal)
-        self.slider_c = SliderFloat(QtCore.Qt.Horizontal)
+        self.slider_s_hsl = SliderFloat(QtCore.Qt.Horizontal)
         self.slider_l = SliderFloat(QtCore.Qt.Horizontal)
 
         self.layout_menu = QVBoxLayout()
 
         # self.layout_menu.addWidget(self.slider_h)
-        # self.layout_menu.addWidget(self.slider_s)
+        # self.layout_menu.addWidget(self.slider_s_hsv)
         # self.layout_menu.addWidget(self.slider_v)
-        # self.layout_menu.addWidget(self.slider_c)
+        # self.layout_menu.addWidget(self.slider_s_hsl)
         # self.layout_menu.addWidget(self.slider_l)
 
         self.layout_menu.addLayout(self.make_layout_with_label(self.slider_h, 'H'))
-        self.layout_menu.addLayout(self.make_layout_with_label(self.slider_s, 'S'))
+        self.layout_menu.addLayout(self.make_layout_with_label(self.slider_s_hsv, 'S_hsv'))
         self.layout_menu.addLayout(self.make_layout_with_label(self.slider_v, 'V'))
-        self.layout_menu.addLayout(self.make_layout_with_label(self.slider_c, 'C'))
+        self.layout_menu.addLayout(self.make_layout_with_label(self.slider_s_hsl, 'S_hsl'))
         self.layout_menu.addLayout(self.make_layout_with_label(self.slider_l, 'L'))
 
         self.combo_color_space_image = QtWidgets.QComboBox()

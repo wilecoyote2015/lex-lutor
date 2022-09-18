@@ -83,7 +83,8 @@ class NodeLut(Qt3DCore.QEntity):
         self.addComponent(self.mesh)
 
         # TODO: make signal for selected changed
-        self.is_selected = False
+        # self.is_selected = False
+        self.weight_selection = 0.
         self.is_selected_base = False
 
         self.active = False
@@ -97,13 +98,14 @@ class NodeLut(Qt3DCore.QEntity):
         self.picker.entered.connect(self.emit_mouse_hover_start)
         # self.picker.clicked.connect(self.parentEntity().slot_clicked)
 
+    @property
+    def is_selected(self):
+        return self.weight_selection > 0.
+
     @QtCore.Slot(QVector3D)
     def send_signal_position_changed(self, coordinates):
         # print('Emit')
         self.position_changed.emit(self.indices_lut, coordinates)
-
-
-
 
     @QtCore.Slot()
     def accept_transform(self):
@@ -116,11 +118,11 @@ class NodeLut(Qt3DCore.QEntity):
         self.transform.setTranslation(self.coordinates_current)
 
     @QtCore.Slot(bool)
-    def select(self, is_selected):
-        self.is_selected = is_selected
+    def select(self, weight):
+        self.weight_selection = weight
 
         if not self.is_selected_base:
-            self.material.setAmbient(self.color_selected if is_selected else self.color_source)
+            self.material.setAmbient(self.color_selected if self.is_selected else self.color_source)
 
     @QtCore.Slot(bool)
     def select_base(self, is_selected):
