@@ -17,6 +17,7 @@ from scipy.sparse import csc_matrix
 from lex_lutor.constants import color_spaces
 from superqt import QRangeSlider
 from typing import Generic, List, Sequence, Tuple, TypeVar, Union
+from lex_lutor.curve_editor import Curve, CurveWidget
 
 # TODO / FIXME: use base img color space lut everywhere where needed!
 
@@ -285,6 +286,11 @@ class MenuWidget(QtWidgets.QWidget):
         self.combo_color_space_image.currentTextChanged.connect(self.slot_color_space_image_changed)
         self.combo_color_space_display.currentTextChanged.connect(self.slot_color_space_display_changed)
         # self.combo_color_space_lut.currentTextChanged.connect(self.slot_color_space_lut_changed)
+
+        self.curve_editor = CurveWidget(self, Curve())
+        self.layout_menu.addWidget(self.curve_editor)
+
+        # TODO: tabbed
 
         # TODO: update image display on color space change
 

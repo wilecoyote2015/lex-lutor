@@ -18,8 +18,9 @@ color_spaces_components_transform = {
     (Qt.Key_V, Qt.NoModifier): (HSV, 2),
     (Qt.Key_S, int(Qt.Modifier.SHIFT)): (HSL, 1),
     (Qt.Key_L, Qt.NoModifier): (HSL, 2)
-
 }
+
+mode_transform_curve = (Qt.Key_L, Qt.NoModifier)
 
 color_spaces = OrderedDict(
     [(colorspace_.name, colorspace_) for colorspace_ in [

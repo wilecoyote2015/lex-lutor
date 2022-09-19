@@ -39,16 +39,15 @@ class NodeLut(Qt3DCore.QEntity):
         self.coordinates_reset = coordinates_target
         self.coordinates_source = coordinates_source
 
+        self.coordinates_without_base_adjustment = coordinates_target
+
+        self.base_adjustment_lightness = 0.
+        self.base_adjustment_value = 0.
+        self.base_adjustment_saturation_hsl = 0.
+        self.base_adjustment_saturation_hsv = 0.
+
         self.transform = Qt3DCore.QTransform(translation=coordinates_target)
         self.transform.translationChanged.connect(self.send_signal_position_changed)
-
-        # TODO: must be changed in slot on movement!
-        self.color_target = QtGui.QColor(
-            coordinates_target.x() * 255,
-            coordinates_target.y() * 255,
-            coordinates_target.z() * 255,
-                                255
-                            )
 
         self.color_source = QtGui.QColor(
             coordinates_source.x() * 255,

@@ -48,12 +48,13 @@ class WorkerTransform(QObject):
     finished = Signal(list, np.ndarray)
     progress = Signal(int)
 
-    def __init__(self, lut, mode, distance, *args, **kwargs):
+    def __init__(self, lut, mode, distance, *args, nodes=None, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.lut = lut
         self.mode = mode
         self.distance = distance
+        self.nodes = nodes
 
     def run(self, ):
         # TODO: Exposure. For this, first transformation must be into linear RGB.
@@ -63,7 +64,6 @@ class WorkerTransform(QObject):
         # TODO: Linear space if upper case
         t_0 = datetime.now()
         color_space_transform, dimension_transform = color_spaces_components_transform[self.mode]
-        t_trafo_1 = datetime.now() - t_0
 
         # TODO: adapt below to vectorized
         # if (color_space_transform in (HSV, HSL, HCL) and dimension_transform in [0, 1]
@@ -71,35 +71,29 @@ class WorkerTransform(QObject):
         #     # If target compomnent is related to color, but current node has no color, then nothing to do.
         #     return
 
-        # TODO: get weights from nodes.
-
-        # try:
-        def fn(node, result_):
-            if node.is_selected:
-                result_.append((node.indices_lut, node.coordinates_current.toTuple(), node.weight_selection))
-
-        # print(self.lut.iter_nodes(fn))
-
         indices_nodes = []
         coordinates_nodes_current = []
         weights_nodes = []
+        if self.nodes is None:
+            def fn(node, result_):
+                if node.is_selected:
+                    result_.append((node.indices_lut, node.coordinates_current.toTuple(), node.weight_selection))
 
-        for indices_node, coordiantes_node, weight_node in self.lut.iter_nodes(fn):
-            indices_nodes.append(indices_node)
-            coordinates_nodes_current.append(coordiantes_node)
-            weights_nodes.append(weight_node)
-
-        # indices_nodes, coordinates_nodes_current, weights_nodes = zip(self.lut.iter_nodes(fn))
+            for indices_node, coordiantes_node, weight_node in self.lut.iter_nodes(fn):
+                indices_nodes.append(indices_node)
+                coordinates_nodes_current.append(coordiantes_node)
+                weights_nodes.append(weight_node)
+        else:
+            for node in self.nodes:
+                indices_nodes.append(node.indices_lut)
+                coordinates_nodes_current.append(node.coordinates_current.toTuple())
+                weights_nodes.append(1.)
 
         if not indices_nodes:
             self.finished.emit([], [])
 
         coordinates_nodes_current = np.asarray(coordinates_nodes_current)
-        # t_coords_current = datetime.now() - t_0 - t_trafo_1
 
-        # TODO
-        # print(weights_nodes)
-        # print(self.distance)
         weights = np.asarray(weights_nodes)
 
         # Distance for each node
@@ -110,26 +104,21 @@ class WorkerTransform(QObject):
             color_space_transform,
             coordinates_nodes_current
         )
-        # t_coords_current_target_space = datetime.now() - t_coords_current - t_0 - t_trafo_1
 
         components_vector_add = np.asarray([1. if idx_ == dimension_transform else 0. for idx_ in range(3)])
         coords_new_target_space = coords_current_target_space + components_vector_add[np.newaxis, ...] * \
                                   distance_weighted[..., np.newaxis]
-        # print(coords_new_target_space.toTuple())
         # TODO: respect domain!
         if color_space_transform in (HSV, HSL, HCL) and dimension_transform == 0:
-            # print(coords_new_target_space.x())
             coords_new_target_space[..., 0] = np.mod(coords_new_target_space[..., 0], 1.)
         elif color_space_transform == HCL and dimension_transform == 1:
             # FIXME: This is wrong.
             coords_new_target_space[..., 1] = np.clip(coords_new_target_space[..., 0], 0, 2 / 3)
         elif color_space_transform == HSL and dimension_transform == 2:
             coords_new_target_space[..., 2] = self.lut.clip_l(coords_new_target_space)
-            # coords_new_target_space.setZ(self.clip_l(*coords_new_target_space.toTuple()))
             pass
         else:
             coords_new_target_space = np.clip(coords_new_target_space, 0, 1)
-        # t_clip = datetime.now() - t_0 - t_coords_current - t_trafo_1 - t_coords_current_target_space
 
         # transform to target color space, modify the according component and then
         coords_new = self.lut.transform_color_space(
@@ -137,17 +126,9 @@ class WorkerTransform(QObject):
             self.lut.color_space,
             coords_new_target_space
         )
-        # t_coords_new = datetime.now() - t_0 - t_coords_current - t_trafo_1 - t_coords_current_target_space - t_clip
-
-        # TODO: clip to borders
-        # TODO: Clipping must be reflected in the trafo fn, as it must handle color space correctly (
-        #  e.g. pertain hue on clipping)
-        # coors_new = np.reshape(coords_new, (self.lut.size, self.lut.size, self.lut.size, 3))
 
         self.finished.emit(indices_nodes, coords_new)
 
-        # except Exception as e:
-        #     print(f'Error during transformation of node: \n {e}')
 
 
 class WorkerGetNodesSelectionDerived(QObject):
@@ -754,6 +735,13 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
     @QtCore.Slot(int, float)
     def transform_dragging(self, mode, distance):
+        self.queue_updates_transform.start_job(self, mode, distance)
+
+    @QtCore.Slot()
+    def update_transform_curve_change(self, mode, distance):
+        # Change the base shift according to curve
+
+        # Recalculate the transform
         self.queue_updates_transform.start_job(self, mode, distance)
 
     @QtCore.Slot(list, np.ndarray)
