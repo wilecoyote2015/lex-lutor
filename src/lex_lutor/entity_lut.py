@@ -1,14 +1,14 @@
 import colour
 import numpy as np
 from PySide6 import QtCore, QtWidgets, QtGui
-from PySide6.QtCore import (Property, QObject, QPropertyAnimation, Signal)
+from PySide6.QtCore import (Property, QObject, QPropertyAnimation, Signal, Qt)
 from PySide6.QtWidgets import QWidget, QPushButton, QGraphicsWidget, QHBoxLayout, QVBoxLayout, QApplication
 from PySide6.Qt3DCore import Qt3DCore
 from PySide6.Qt3DExtras import Qt3DExtras
 from PySide6.QtGui import (QGuiApplication, QMatrix4x4, QQuaternion, QVector3D)
 from PySide6.Qt3DInput import Qt3DInput
 from PySide6.Qt3DRender import Qt3DRender
-from lex_lutor.constants import HSV, HSL, HCL, color_spaces_components_transform, KEY_EXPOSURE
+from lex_lutor.constants import HSV, HSL, HCL, color_spaces_components_transform, KEY_EXPOSURE, mode_transform_curve
 from datetime import datetime
 from lex_lutor.job_queue import JobQueue
 
@@ -45,7 +45,7 @@ from datetime import datetime, timedelta
 
 
 class WorkerTransform(QObject):
-    finished = Signal(list, np.ndarray)
+    finished = Signal(list, np.ndarray, np.ndarray)
     progress = Signal(int)
 
     def __init__(self, lut, mode, distance, *args, nodes=None, **kwargs):
@@ -57,13 +57,68 @@ class WorkerTransform(QObject):
         self.nodes = nodes
 
     def run(self, ):
-        # TODO: Exposure. For this, first transformation must be into linear RGB.
-        #   But how is exposure calculated then? Effect of exposure must not depend on linear color space
-        #   choice. How is the transfer function handled in colour?
+        indices_nodes = []
+        coordinates_nodes_current_wo_base_adj = []
+        weights_nodes = []
+        base_adjustments_lvss = []
+        if self.nodes is None:
+            def fn(node, result_):
+                if node.is_selected:
+                    result_.append(
+                        (
+                            node.indices_lut,
+                            node.coordinates_without_base_adjustment_before_trafo_start.toTuple(),
+                            node.weight_selection,
+                            node.base_adjustments_lvss
+                        )
+                    )
 
-        # TODO: Linear space if upper case
-        t_0 = datetime.now()
-        color_space_transform, dimension_transform = color_spaces_components_transform[self.mode]
+            for indices_node, coordiantes_node, weight_node, base_adjustments_lvss_ in self.lut.iter_nodes(fn):
+                indices_nodes.append(indices_node)
+                coordinates_nodes_current_wo_base_adj.append(coordiantes_node)
+                weights_nodes.append(weight_node)
+                base_adjustments_lvss.append(base_adjustments_lvss_)
+        else:
+            for node in self.nodes:
+                indices_nodes.append(node.indices_lut)
+                coordinates_nodes_current_wo_base_adj.append(
+                    node.coordinates_without_base_adjustment_before_trafo_start.toTuple())
+                weights_nodes.append(1.)
+                base_adjustments_lvss.append(node.base_adjustments_lvss)
+
+        if not indices_nodes:
+            self.finished.emit([], [], [])
+
+        coords_wo_base_adj_new = self.calc_coords_after_transformation(
+            coordinates_nodes_current_wo_base_adj,
+            self.distance * np.asarray(weights_nodes),
+            self.mode
+        )
+
+        coords_current_new = coords_wo_base_adj_new.copy()
+        base_adjustments_array = np.asarray(base_adjustments_lvss)
+        # TODO: is this order good?
+        for idx_channel_base, mode in enumerate([
+            (Qt.Key_L, Qt.NoModifier),
+            (Qt.Key_V, Qt.NoModifier),
+            (Qt.Key_S, Qt.NoModifier),
+            (Qt.Key_L, Qt.NoModifier),
+            (Qt.Key_R, Qt.NoModifier),
+            (Qt.Key_G, Qt.NoModifier),
+            (Qt.Key_B, Qt.NoModifier),
+        ]):
+            has_base_adjustment = base_adjustments_array[:, idx_channel_base] != 0.
+            if np.any(has_base_adjustment):
+                coords_current_new[has_base_adjustment] = self.calc_coords_after_transformation(
+                    coords_current_new[has_base_adjustment],
+                    base_adjustments_array[has_base_adjustment, idx_channel_base],
+                    mode
+                )
+
+        self.finished.emit(indices_nodes, coords_current_new, coords_wo_base_adj_new)
+
+    def calc_coords_after_transformation(self, coordinates_nodes_current, distances_weighted, mode):
+        color_space_transform, dimension_transform = color_spaces_components_transform[mode]
 
         # TODO: adapt below to vectorized
         # if (color_space_transform in (HSV, HSL, HCL) and dimension_transform in [0, 1]
@@ -71,43 +126,22 @@ class WorkerTransform(QObject):
         #     # If target compomnent is related to color, but current node has no color, then nothing to do.
         #     return
 
-        indices_nodes = []
-        coordinates_nodes_current = []
-        weights_nodes = []
-        if self.nodes is None:
-            def fn(node, result_):
-                if node.is_selected:
-                    result_.append((node.indices_lut, node.coordinates_current.toTuple(), node.weight_selection))
+        coordinates_nodes_current_wo_base_adj = np.asarray(coordinates_nodes_current)
 
-            for indices_node, coordiantes_node, weight_node in self.lut.iter_nodes(fn):
-                indices_nodes.append(indices_node)
-                coordinates_nodes_current.append(coordiantes_node)
-                weights_nodes.append(weight_node)
-        else:
-            for node in self.nodes:
-                indices_nodes.append(node.indices_lut)
-                coordinates_nodes_current.append(node.coordinates_current.toTuple())
-                weights_nodes.append(1.)
-
-        if not indices_nodes:
-            self.finished.emit([], [])
-
-        coordinates_nodes_current = np.asarray(coordinates_nodes_current)
-
-        weights = np.asarray(weights_nodes)
+        # weights = np.asarray(weights_nodes)
 
         # Distance for each node
-        distance_weighted = self.distance * weights
+        # distance_weighted = self.distance * weights
 
         coords_current_target_space = self.lut.transform_color_space(
             self.lut.color_space,
             color_space_transform,
-            coordinates_nodes_current
+            coordinates_nodes_current_wo_base_adj
         )
 
         components_vector_add = np.asarray([1. if idx_ == dimension_transform else 0. for idx_ in range(3)])
         coords_new_target_space = coords_current_target_space + components_vector_add[np.newaxis, ...] * \
-                                  distance_weighted[..., np.newaxis]
+                                  distances_weighted[..., np.newaxis]
         # TODO: respect domain!
         if color_space_transform in (HSV, HSL, HCL) and dimension_transform == 0:
             coords_new_target_space[..., 0] = np.mod(coords_new_target_space[..., 0], 1.)
@@ -127,7 +161,7 @@ class WorkerTransform(QObject):
             coords_new_target_space
         )
 
-        self.finished.emit(indices_nodes, coords_new)
+        return coords_new
 
 
 
@@ -254,6 +288,8 @@ class Lut3dEntity(Qt3DCore.QComponent):
         self.parent_gui.gui_parent.widget_menu.stop_preview_pixel_hovered.connect(self.slot_stop_hover_pixel)
 
         self.parent_gui.gui_parent.widget_menu.color_space_lut_changed.connect(self.set_color_space)
+
+        self.parent_gui.gui_parent.widget_menu.curve_editor.curve_updated.connect(self.update_transform_curve_change)
 
         self.lut_changed.emit(self.lut)
 
@@ -666,12 +702,17 @@ class Lut3dEntity(Qt3DCore.QComponent):
             # TODO: currently, coords are reset to state where lut is loaded.
             #   reset to neutral color insted?
             if node.is_selected:
-                node.transform.setTranslation(node.coordinates_reset)
-                node.accept_transform()
+                # node.transform.setTranslation(node.coordinates_reset)
+                node.coordinates_without_base_adjustment_before_trafo_start = node.coordinates_without_base_adjustment_reset
+                # node.accept_transform()
                 self.lut.table[node.indices_lut] = np.asarray(node.coordinates_current.toTuple())
+                result_.append(node)
 
         # fn = node.
-        self.iter_nodes(fn)
+        nodes_transform = self.iter_nodes(fn)
+        if nodes_transform:
+            self.queue_updates_transform.start_job(self, mode_transform_curve, 0., nodes=nodes_transform)
+
         self.lut_changed.emit(self.lut)
 
     def transform_color_space(self, color_space_source, color_space_target, input_array: np.ndarray):
@@ -738,20 +779,51 @@ class Lut3dEntity(Qt3DCore.QComponent):
         self.queue_updates_transform.start_job(self, mode, distance)
 
     @QtCore.Slot()
-    def update_transform_curve_change(self, mode, distance):
+    def update_transform_curve_change(self, curve):
         # Change the base shift according to curve
+        def fn(node, result_):
+            # lightness_coords_node = self.transform_color_space(
+            #     self.color_space,
+            #     HSL,
+            #     np.asarray(node.coordinates_source.toTuple())[np.newaxis, ...]
+            # )[0, 2]
+            # adjustment_prev = node.base_adjustment_lightness
+            # node.base_adjustment_lightness = curve.get_y(lightness_coords_node) - lightness_coords_node
+
+            # value_coords_node = self.transform_color_space(
+            #     self.color_space,
+            #     HSV,
+            #     np.asarray(node.coordinates_source.toTuple())[np.newaxis, ...]
+            # )[0, 2]
+            # adjustment_prev = node.base_adjustment_value
+            # node.base_adjustment_value = curve.get_y(value_coords_node) - value_coords_node
+
+            r, g, b = node.coordinates_source.toTuple()
+            node.base_adjustment_r = curve.get_y(r) - r
+            node.base_adjustment_g = curve.get_y(g) - g
+            node.base_adjustment_b = curve.get_y(b) - b
+
+            result_.append(node)
+
+            # if node.base_adjustment_value != adjustment_prev:
+            #     result_.append(node)
+
+        nodes = self.iter_nodes(fn)
 
         # Recalculate the transform
-        self.queue_updates_transform.start_job(self, mode, distance)
+        if nodes:
+            self.queue_updates_transform.start_job(self, mode_transform_curve, 0., nodes=nodes)
 
     @QtCore.Slot(list, np.ndarray)
-    def apply_calculated_transorm_to_nodes_dragging_change(self, indices_nodes, coordinates):
+    def apply_calculated_transorm_to_nodes_dragging_change(self, indices_nodes, coordinates_new,
+                                                           coordinates_wo_base_adj_new):
         for idx, indices_node in enumerate(indices_nodes):
             node = self.nodes_lut[indices_node[0]][indices_node[1]][indices_node[2]]
             node.transform.setTranslation(
-                QVector3D(*coordinates[idx])
+                QVector3D(*coordinates_new[idx])
             )
-            self.lut.table[node.indices_lut] = coordinates[idx]
+            node.coordinates_without_base_adjustment = QVector3D(*coordinates_wo_base_adj_new[idx])
+            self.lut.table[node.indices_lut] = coordinates_new[idx]
 
         self.lut_changed.emit(self.lut)
 

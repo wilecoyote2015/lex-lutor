@@ -144,6 +144,11 @@ class CubeView(Qt3DExtras.Qt3DWindow):
 
         elif (key, int(modifiers)) in color_spaces_components_transform:
             # TODO: Better send signals to start and stop transform?
+            def fn(node, _):
+                node.coordinates_current_before_translation = node.coordinates_current
+                # node.coordinates_without_base_adjustment_before_trafo_start = node.coordinates_without_base_adjustment
+
+            self.entity_lut.iter_nodes(fn)
             self.mode_transform_current = (key, int(modifiers))
             self.coordinates_mouse_event_start = QCursor.pos()
 

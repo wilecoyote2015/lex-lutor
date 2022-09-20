@@ -12,7 +12,7 @@ from scipy.interpolate import interp1d
 
 # FROM https://discourse.panda3d.org/t/pyqt-curve-editor-curvefitter-example/15207/1
 class Curve(QtCore.QObject):
-    updated = Signal()
+    updated = Signal(object)
     """ Interface to the NURBS curve which also manages connecting the end of the
     curve with the beginning """
 
@@ -67,7 +67,7 @@ class Curve(QtCore.QObject):
 
         self.interpolator_curve = interp1d(self.control_points[:, 0], self.control_points[:, 1], kind='quadratic',
                                            fill_value="extrapolate")
-        self.updated.emit()
+        self.updated.emit(self)
 
     def set_control_point(self, index, x_value, y_value):
         """ Updates the cv point at the given index """
@@ -78,7 +78,7 @@ class Curve(QtCore.QObject):
         """ Returns the value on the curve ranging whereas the offset should be
         from 0 to 1 (0 denotes the start of the curve). The returned value will
         be a value from 0 to 1 as well. """
-        return np.min(np.max(self.interpolator_curve(x), 0), 1)
+        return np.minimum(np.maximum(self.interpolator_curve(x), 0), 1)
 
     def add_control_point(self, x, y):
         if not np.any(self.control_points[:, 0] == x):
@@ -95,7 +95,7 @@ class Curve(QtCore.QObject):
 
 
 class CurveWidget(QWidget):
-    curve_updated = Signal()
+    curve_updated = Signal(Curve)
     """ This is a resizeable Widget which shows an editable curve which can
     be modified. """
 

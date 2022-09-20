@@ -21,8 +21,8 @@ class JobQueue(QObject):
             self.queue = []
 
     @Slot()
-    def start_job(self, *args_worker):
-        thread, worker = QThread(), self.cls_worker(*self.args_worker_static, *args_worker)
+    def start_job(self, *args_worker, **kwargs_worker):
+        thread, worker = QThread(), self.cls_worker(*self.args_worker_static, *args_worker, **kwargs_worker)
         self.queue.append((thread, worker, str(id(worker))))
 
         worker.moveToThread(thread)

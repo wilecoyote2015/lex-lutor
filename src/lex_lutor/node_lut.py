@@ -35,16 +35,22 @@ class NodeLut(Qt3DCore.QEntity):
         # TODO: coordinates etc. should be qvector.
 
         # Those coordinates are kept during ongoing transformation until transformation is finished
-        self.coordinates_current = coordinates_target
-        self.coordinates_reset = coordinates_target
+        # FIXME: reset won't work. must use base adjustment resets and then re-apply trafo.
+        self.coordinates_current_before_translation = coordinates_target
+        # self.coordinates_reset = coordinates_target
         self.coordinates_source = coordinates_source
 
         self.coordinates_without_base_adjustment = coordinates_target
+        self.coordinates_without_base_adjustment_reset = coordinates_target
+        self.coordinates_without_base_adjustment_before_trafo_start = coordinates_target
 
         self.base_adjustment_lightness = 0.
         self.base_adjustment_value = 0.
-        self.base_adjustment_saturation_hsl = 0.
         self.base_adjustment_saturation_hsv = 0.
+        self.base_adjustment_saturation_hsl = 0.
+        self.base_adjustment_r = 0.
+        self.base_adjustment_g = 0.
+        self.base_adjustment_b = 0.
 
         self.transform = Qt3DCore.QTransform(translation=coordinates_target)
         self.transform.translationChanged.connect(self.send_signal_position_changed)
@@ -101,20 +107,39 @@ class NodeLut(Qt3DCore.QEntity):
     def is_selected(self):
         return self.weight_selection > 0.
 
+    @property
+    def base_adjustments_lvss(self):
+        return (
+            self.base_adjustment_lightness,
+            self.base_adjustment_value,
+            self.base_adjustment_saturation_hsv,
+            self.base_adjustment_saturation_hsl,
+            self.base_adjustment_r,
+            self.base_adjustment_g,
+            self.base_adjustment_b
+        )
+
     @QtCore.Slot(QVector3D)
     def send_signal_position_changed(self, coordinates):
         # print('Emit')
         self.position_changed.emit(self.indices_lut, coordinates)
 
+    @property
+    def coordinates_current(self):
+        return self.transform.translation()
+
     @QtCore.Slot()
     def accept_transform(self):
-        # TODO: Transformation is ended: set coordinates_current to new transform coordinates
-        self.coordinates_current = self.transform.translation()
+        self.coordinates_without_base_adjustment_before_trafo_start = self.coordinates_without_base_adjustment
+        pass
+        # self.coordinates_current = self.transform.translation()
+        # TODO: must set coordinates_current_before_translation
+        # self.coordinates_without_base_adjustment_before_trafo_start = self.coordinates_without_base_adjustment
 
     @QtCore.Slot()
     def cancel_transform(self):
         # TODO: Transformation is ended: reset transform to coordinates_current
-        self.transform.setTranslation(self.coordinates_current)
+        self.transform.setTranslation(self.coordinates_current_before_translation)
 
     @QtCore.Slot(bool)
     def select(self, weight):
