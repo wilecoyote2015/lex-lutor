@@ -310,14 +310,14 @@ class Lut3dEntity(Qt3DCore.QComponent):
     @property
     def coordinates_lut_source(self):
         lut = self.lut
-        values_r_source = np.linspace(lut.domain[0, 0], lut.domain[1, 0], lut.size)
-        values_g_source = np.linspace(lut.domain[0, 1], lut.domain[1, 1], lut.size)
-        values_b_source = np.linspace(lut.domain[0, 2], lut.domain[1, 2], lut.size)
+        return self.get_coordinates_lut(lut.size, lut.domain)
+
+    def get_coordinates_lut(self, size, domain):
+        values_r_source = np.linspace(domain[0, 0], domain[1, 0], size)
+        values_g_source = np.linspace(domain[0, 1], domain[1, 1], size)
+        values_b_source = np.linspace(domain[0, 2], domain[1, 2], size)
 
         return values_r_source, values_g_source, values_b_source
-
-    # def load_lut_file(self, filepath):
-    #     lut =
 
     def find_nodes_influencing_pixel(self, coordinates_pixel: QVector3D):
         result = []

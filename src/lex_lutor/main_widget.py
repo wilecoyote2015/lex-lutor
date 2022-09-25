@@ -41,8 +41,15 @@ class MainWindow(QMainWindow):
         menu_bar = self.menuBar()
 
         menu_file = QtWidgets.QMenu('&File', self)
+        menu_lut = QtWidgets.QMenu('&LUT', self)
 
         menu_bar.addMenu(menu_file)
+        menu_bar.addMenu(menu_lut)
+
+        self.action_new_lut = QtGui.QAction('&New LUT...', self)
+        self.action_new_lut.triggered.connect(self.new_lut)
+        # self.action_open_lut.setText('&Open LUT')
+        menu_file.addAction(self.action_new_lut)
 
         self.action_open_lut = QtGui.QAction('&Open LUT...', self)
         self.action_open_lut.triggered.connect(self.open_lut)
@@ -64,7 +71,28 @@ class MainWindow(QMainWindow):
         # self.action_open_image.setText('&Open Image')
         menu_file.addAction(self.action_save_lut_as)
 
+        self.action_resample = QtGui.QAction('&Resample LUT...', self)
+        self.action_resample.triggered.connect(self.resample_lut)
+        # self.action_open_image.setText('&Open Image')
+        menu_lut.addAction(self.action_resample)
+
         self.setMenuBar(menu_bar)
+
+    def new_lut(self):
+        size, _ = QtWidgets.QInputDialog.getInt(
+            self,
+            'Choose LUT size',
+            'Choose the size of the new LUT. '
+            'The Size is the number of nodes per axis. '
+            'It is recommended to start with 5-9 and use an odd number.',
+            5,
+            3,
+            16
+
+        )
+        lut = colour.LUT3D(colour.LUT3D.linear_table(size))
+        self.path_lut = None
+        self.main_widget.window_3d.load_lut(lut)
 
     def open_lut(self):
         path_lut, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -115,6 +143,31 @@ class MainWindow(QMainWindow):
             except:
                 QtWidgets.QErrorMessage(self).showMessage(f'File is not a valid image: {path_image}')
 
+    def resample_lut(self):
+        # TODO: interpolation
+        size, _ = QtWidgets.QInputDialog.getInt(
+            self,
+            'Choose LUT size',
+            'Choose the size to resample the LUT to.. '
+            'The Size is the number of nodes per axis. ',
+            5,
+            3,
+            16
+
+        )
+        entity_lut = self.main_widget.window_3d.entity_lut
+        lut_old = entity_lut.lut
+        # lut_new = entity_lut.lut.convert(type(entity_lut.lut), size=size)
+        # domain = entity_lut.lut.domain
+
+        table_lut_new = lut_old.apply(
+            colour.LUT3D(colour.LUT3D.linear_table(size, domain=lut_old.domain)).table
+        )
+        lut_new = colour.LUT3D(table_lut_new, domain=lut_old.domain)
+
+        # lut = colour.LUT3D(colour.LUT3D.linear_table(size))
+        # self.path_lut = None
+        self.main_widget.window_3d.load_lut(lut_new)
 
 class MainWidget(QtWidgets.QWidget):
 
