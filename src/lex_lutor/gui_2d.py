@@ -222,7 +222,7 @@ class MenuWidget(QtWidgets.QWidget):
         layout = QVBoxLayout()
         layout.addWidget(self.label_image)
         # layout.addStretch(2)
-        layout.addLayout(menu)
+        layout.addWidget(menu)
 
         self.setLayout(layout)
 
@@ -243,25 +243,29 @@ class MenuWidget(QtWidgets.QWidget):
         return color_spaces[self.combo_color_space_display.currentText()]
 
     def build_menu(self):
+        self.tabs_editing = QtWidgets.QTabWidget()
+
+        self.widget_sliders = QWidget()
+        self.layout_sliders = QVBoxLayout()
+        self.widget_sliders.setLayout(self.layout_sliders)
+        self.tabs_editing.addTab(self.widget_sliders, 'Selection')
+
         self.slider_h = SliderFloat(QtCore.Qt.Horizontal)
         self.slider_s_hsv = SliderFloat(QtCore.Qt.Horizontal)
         self.slider_v = SliderFloat(QtCore.Qt.Horizontal)
         self.slider_s_hsl = SliderFloat(QtCore.Qt.Horizontal)
         self.slider_l = SliderFloat(QtCore.Qt.Horizontal)
 
-        self.layout_menu = QVBoxLayout()
+        self.layout_sliders.addLayout(self.make_layout_with_label(self.slider_h, 'H'))
+        self.layout_sliders.addLayout(self.make_layout_with_label(self.slider_s_hsv, 'S_hsv'))
+        self.layout_sliders.addLayout(self.make_layout_with_label(self.slider_v, 'V'))
+        self.layout_sliders.addLayout(self.make_layout_with_label(self.slider_s_hsl, 'S_hsl'))
+        self.layout_sliders.addLayout(self.make_layout_with_label(self.slider_l, 'L'))
 
-        # self.layout_menu.addWidget(self.slider_h)
-        # self.layout_menu.addWidget(self.slider_s_hsv)
-        # self.layout_menu.addWidget(self.slider_v)
-        # self.layout_menu.addWidget(self.slider_s_hsl)
-        # self.layout_menu.addWidget(self.slider_l)
-
-        self.layout_menu.addLayout(self.make_layout_with_label(self.slider_h, 'H'))
-        self.layout_menu.addLayout(self.make_layout_with_label(self.slider_s_hsv, 'S_hsv'))
-        self.layout_menu.addLayout(self.make_layout_with_label(self.slider_v, 'V'))
-        self.layout_menu.addLayout(self.make_layout_with_label(self.slider_s_hsl, 'S_hsl'))
-        self.layout_menu.addLayout(self.make_layout_with_label(self.slider_l, 'L'))
+        self.widget_color_spaces = QWidget()
+        self.layout_color_spaces = QVBoxLayout()
+        self.widget_color_spaces.setLayout(self.layout_color_spaces)
+        self.tabs_editing.addTab(self.widget_color_spaces, 'Color Space')
 
         self.combo_color_space_image = QtWidgets.QComboBox()
         self.combo_color_space_image.addItems(list(color_spaces.keys()))
@@ -275,26 +279,24 @@ class MenuWidget(QtWidgets.QWidget):
         self.combo_color_space_display.addItems(list(color_spaces.keys()))
         self.combo_color_space_display.setCurrentIndex(0)
 
-        # self.layout_menu.addWidget(self.combo_color_space_image)
-        # self.layout_menu.addWidget(self.combo_color_space_lut)
-        # self.layout_menu.addWidget(self.combo_color_space_display)
-        self.layout_menu.addLayout(self.make_layout_with_label(self.combo_color_space_image, 'Image'))
-        self.layout_menu.addLayout(self.make_layout_with_label(self.combo_color_space_lut, 'LUT'))
-        self.layout_menu.addLayout(self.make_layout_with_label(self.combo_color_space_display, 'Display'))
+        self.layout_color_spaces.addLayout(self.make_layout_with_label(self.combo_color_space_image, 'Image'))
+        self.layout_color_spaces.addLayout(self.make_layout_with_label(self.combo_color_space_lut, 'LUT'))
+        self.layout_color_spaces.addLayout(self.make_layout_with_label(self.combo_color_space_display, 'Display'))
 
         self.combo_color_space_lut.currentTextChanged.connect(self.slot_color_space_lut_changed)
         self.combo_color_space_image.currentTextChanged.connect(self.slot_color_space_image_changed)
         self.combo_color_space_display.currentTextChanged.connect(self.slot_color_space_display_changed)
         # self.combo_color_space_lut.currentTextChanged.connect(self.slot_color_space_lut_changed)
 
+        self.widget_curve = QWidget()
+        self.layout_curve = QVBoxLayout()
+        self.widget_curve.setLayout(self.layout_curve)
+        self.tabs_editing.addTab(self.widget_curve, 'Curve')
+
         self.curve_editor = CurveWidget(self, Curve())
-        self.layout_menu.addWidget(self.curve_editor)
+        self.layout_curve.addWidget(self.curve_editor)
 
-        # TODO: tabbed
-
-        # TODO: update image display on color space change
-
-        return self.layout_menu
+        return self.tabs_editing
 
     def set_img_base_colorspace_lut(self):
         self.img_base_colorspace_lut = colour.models.RGB_to_RGB(
