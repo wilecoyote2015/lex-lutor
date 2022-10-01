@@ -193,6 +193,9 @@ class MainWidget(QtWidgets.QWidget):
         layout.addWidget(self.widget_menu)
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        # if event.key() == QtCore.Qt.Key.Key_Space:
+        #     self.window_3d.entity_lut.toggle_preview_selection_always_on()
+        # else:
         self.window_3d.keyPressEvent(event)
 
     def keyReleaseEvent(self, event: QtGui.QKeyEvent) -> None:

@@ -139,8 +139,11 @@ class CubeView(Qt3DExtras.Qt3DWindow):
             self.entity_lut.reset_selected_nodes()
         if key == QtCore.Qt.Key_A and event.modifiers() == QtCore.Qt.Modifier.SHIFT:
             self.entity_lut.toggle_select_all()
-        if key == QtCore.Qt.Key.Key_Space:
+        # FIXME: for some reason, after using the curve, a click on 3d view must always be peformed
+        #   before toggling is possible.
+        if event.key() == QtCore.Qt.Key.Key_Space:
             self.entity_lut.toggle_preview_selection_always_on()
+
 
         elif (key, int(modifiers)) in color_spaces_components_transform:
             # TODO: Better send signals to start and stop transform?

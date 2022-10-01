@@ -8,7 +8,8 @@ from PySide6.Qt3DExtras import Qt3DExtras
 from PySide6.QtGui import (QGuiApplication, QMatrix4x4, QQuaternion, QVector3D)
 from PySide6.Qt3DInput import Qt3DInput
 from PySide6.Qt3DRender import Qt3DRender
-from lex_lutor.constants import HSV, HSL, HCL, color_spaces_components_transform, KEY_EXPOSURE, mode_transform_curve
+from lex_lutor.constants import HSV, HSL, HCL, color_spaces_components_transform, KEY_EXPOSURE, mode_transform_curve, \
+    SCALE_CENTER, TRANSLATE
 from datetime import datetime
 from lex_lutor.job_queue import JobQueue
 
@@ -58,6 +59,13 @@ class WorkerTransform(QObject):
         self.nodes = nodes
 
     def run(self, ):
+        """
+            First, transformed coordinates without base adjustment are calculated.
+            Then, the base adjustment is applied on top.
+            Base adjustments are stored in each node and are calculated from the curve with respect to each node's
+            source coordinate.
+        :return:
+        """
         indices_nodes = []
         coordinates_nodes_current_wo_base_adj = []
         weights_nodes = []
@@ -119,7 +127,9 @@ class WorkerTransform(QObject):
         self.finished.emit(indices_nodes, coords_current_new, coords_wo_base_adj_new)
 
     def calc_coords_after_transformation(self, coordinates_nodes_current, distances_weighted, mode):
-        color_space_transform, dimension_transform = color_spaces_components_transform[mode]
+        # TODO: support multiple transform dimensions. dimension_transform sould be tuple.
+        #   how can boundary conditions be handled then?
+        color_space_transform, dimension_transform, action = color_spaces_components_transform[mode]
 
         # TODO: adapt below to vectorized
         # if (color_space_transform in (HSV, HSL, HCL) and dimension_transform in [0, 1]
@@ -129,20 +139,78 @@ class WorkerTransform(QObject):
 
         coordinates_nodes_current_wo_base_adj = np.asarray(coordinates_nodes_current)
 
-        # weights = np.asarray(weights_nodes)
-
-        # Distance for each node
-        # distance_weighted = self.distance * weights
-
         coords_current_target_space = self.lut.transform_color_space(
             self.lut.color_space,
             color_space_transform,
             coordinates_nodes_current_wo_base_adj
         )
 
-        components_vector_add = np.asarray([1. if idx_ == dimension_transform else 0. for idx_ in range(3)])
-        coords_new_target_space = coords_current_target_space + components_vector_add[np.newaxis, ...] * \
-                                  distances_weighted[..., np.newaxis]
+        if action == TRANSLATE:
+            components_vector_add = np.asarray([1. if idx_ == dimension_transform else 0. for idx_ in range(3)])
+            coords_new_target_space = coords_current_target_space + components_vector_add[np.newaxis, ...] * \
+                                      distances_weighted[..., np.newaxis]
+        elif action == SCALE_CENTER:
+            # TODO: respect weights
+            # FIXME:when all nodes are selected, strange behavior with jumping nodes occurs
+            # FIXME: Handle Hue wrap: Near hues with opposing values shift opposite direction.
+            coords_new_target_space = coords_current_target_space.copy()
+            factor = np.where(
+                distances_weighted < 0,
+                1 / (1 - distances_weighted),
+                1 + distances_weighted
+            )
+            if color_space_transform in (HSV, HSL, HCL) and dimension_transform == 0:
+                # def get_angle(x):
+                #     angle = np.angle(x)
+                #     return np.where(
+                #         angle < 0,
+                #         2*np.pi + angle,
+                #         angle
+                #     )
+
+                def get_diff_angle(x, y):
+                    diff_raw = x - y
+                    return np.where(
+                        np.abs(diff_raw) <= np.pi,
+                        diff_raw * -1,
+                        (2 * np.pi - np.abs(diff_raw)) * np.sign(diff_raw)
+                    )
+                    # if abs(diff_raw) <= 180:
+                    #     return diff_raw * -1
+                    # else:
+                    #     return (360 - np.abs(diff_raw)) * np.sign(diff_raw)
+
+                # map 1D hue to 1d manifold in 2d space
+                hue_current = coords_current_target_space[..., dimension_transform]
+                hue_current_complex = np.exp(1j * hue_current * 2 * np.pi)
+                center_of_gravity = np.mean(hue_current_complex)
+                # remark: np.angle is (-pi, pi]
+                angle_center_of_gravity = np.angle(center_of_gravity)
+                diff_angle_raw = angle_center_of_gravity - np.angle(hue_current_complex)
+                diff_angle = np.where(
+                    np.abs(diff_angle_raw) <= np.pi,
+                    diff_angle_raw * -1,
+                    (2 * np.pi - np.abs(diff_angle_raw)) * np.sign(diff_angle_raw)
+                )
+
+                angle_center_of_gravity_positive = np.where(
+                    angle_center_of_gravity < 0,
+                    2 * np.pi + angle_center_of_gravity,
+                    angle_center_of_gravity
+                )
+                hue_new = np.mod(
+                    angle_center_of_gravity_positive + diff_angle * factor,
+                    2 * np.pi
+                ) / (2 * np.pi)
+
+                coords_new_target_space[..., dimension_transform] = hue_new
+
+            else:
+                center_of_gravity = np.mean(coords_current_target_space[..., dimension_transform])
+                diff_center = coords_current_target_space[..., dimension_transform] - center_of_gravity
+                coords_new_target_space[..., dimension_transform] = center_of_gravity + diff_center * factor
+        else:
+            raise NotImplementedError(f'Transform action {action} not supported.')
         # TODO: respect domain!
         if color_space_transform in (HSV, HSL, HCL) and dimension_transform == 0:
             coords_new_target_space[..., 0] = np.mod(coords_new_target_space[..., 0], 1.)

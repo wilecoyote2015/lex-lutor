@@ -21,6 +21,10 @@ from lex_lutor.curve_editor import Curve, CurveWidget
 
 # TODO / FIXME: use base img color space lut everywhere where needed!
 
+# TODO: tab with sliders for 3D cursor control
+# TODO: short cut for setting cursor position by click on image
+# TODO: reference image. Also with function to click for placing 3d cursor.
+
 INTER_TRILINEAR = 'Trilinear'
 INTER_TETRAHEDRAL = 'Tetrahedral'
 
@@ -241,6 +245,10 @@ class MenuWidget(QtWidgets.QWidget):
     @property
     def color_space_display(self):
         return color_spaces[self.combo_color_space_display.currentText()]
+
+    # def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+    #     if event.key() == QtCore.Qt.Key.Key_Space:
+    #         self.parent().window_3d.entity_lut.toggle_preview_selection_always_on()
 
     def build_menu(self):
         self.tabs_editing = QtWidgets.QTabWidget()
