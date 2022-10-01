@@ -43,18 +43,6 @@ if __name__ == '__main__':
     # w.main_widget.window_3d.entity_lut.color_space = colour.models.RGB_COLOURSPACE_ADOBE_RGB1998
     w.main_widget.widget_menu.load_image(path_image)
 
-    # w.show()
-    # w.resize(1200, 800)
-    #
-    # widget_3d = QtWidgets.QWidget.createWindowContainer(CubeView())
-    # widget_3d.setFocusPolicy(QtCore.Qt.TabFocus)
-    # widget_3d.show()
-    # view = CubeView()
-    # widget = view.widget
-
-    # w = QtWidgets.QWidget()
-    # layout = QHBoxLayout(w)
-    # layout.addWidget(view.widget, 1)
 
     w.show()
 

@@ -43,6 +43,7 @@ from datetime import datetime, timedelta
 #   color inversion!
 #   best to introduce general bounds for trafo functions
 
+# TODO: draw axes
 
 class WorkerTransform(QObject):
     finished = Signal(list, np.ndarray, np.ndarray)
