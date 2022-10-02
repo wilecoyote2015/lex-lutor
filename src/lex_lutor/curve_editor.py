@@ -45,7 +45,15 @@ class Curve(QtCore.QObject):
             (1, 2)
         ) if control_points is None else control_points
 
+        self.control_points_initial = self.control_points.copy()
+
+        print(self.control_points_initial)
+
         # Build the curve
+        self.build_curve()
+
+    def reset(self):
+        self.control_points = self.control_points_initial.copy()
         self.build_curve()
 
     def _get_cv_tangent(self, index):
@@ -121,6 +129,12 @@ class CurveWidget(QWidget):
 
         self.curve.updated.connect(self.curve_updated.emit)
 
+    @QtCore.Slot()
+    def reset(self):
+        print(self.curve.control_points_initial)
+        self.curve.reset()
+        self.update()
+
     def paintEvent(self, e):
         """ Internal QT paint event, draws the entire widget """
         qp = QtGui.QPainter()
@@ -140,42 +154,46 @@ class CurveWidget(QWidget):
         return None, None, None
 
     def mouseDoubleClickEvent(self, event) -> None:
-        self._drag_point = None
-        self._selected_point = None
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            self._drag_point = None
+            self._selected_point = None
 
-        mouse_pos = event.pos()
-        mouse_x = mouse_pos.x() - self._legend_border
-        mouse_y = mouse_pos.y()
-        index_cv, x_point, y_point = self.get_control_point_mouse(mouse_x, mouse_y)
-        if index_cv is not None and len(self.curve.control_points) > 4:
-            self.curve.remove_control_point(index_cv)
-            self.update()
+            mouse_pos = event.pos()
+            mouse_x = mouse_pos.x() - self._legend_border
+            mouse_y = mouse_pos.y()
+            index_cv, x_point, y_point = self.get_control_point_mouse(mouse_x, mouse_y)
+            if index_cv is not None and len(self.curve.control_points) > 4:
+                self.curve.remove_control_point(index_cv)
+                self.update()
+        elif event.button() == QtCore.Qt.MouseButton.RightButton:
+            self.reset()
 
     def mousePressEvent(self, event):
         """ Internal mouse-press handler """
-        self._drag_point = None
-        self._selected_point = None
-        mouse_pos = event.pos()
-        mouse_x = mouse_pos.x() - self._legend_border
-        mouse_y = mouse_pos.y()
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            self._drag_point = None
+            self._selected_point = None
+            mouse_pos = event.pos()
+            mouse_x = mouse_pos.x() - self._legend_border
+            mouse_y = mouse_pos.y()
 
-        index_cv, x_point, y_point = self.get_control_point_mouse(mouse_x, mouse_y)
+            index_cv, x_point, y_point = self.get_control_point_mouse(mouse_x, mouse_y)
 
-        if index_cv is not None:
-            drag_x_offset = x_point - mouse_x
-            drag_y_offset = y_point - mouse_y
+            if index_cv is not None:
+                drag_x_offset = x_point - mouse_x
+                drag_y_offset = y_point - mouse_y
 
-            self._drag_point = (index_cv, (drag_x_offset, drag_y_offset))
-            self._selected_point = (index_cv)
-        else:
-            if self._drag_point is None:
-                x_point, y_point = self.convert_pixel_coordinate_value_to_curve_value(mouse_x, mouse_y)
-                index_cv = self.curve.add_control_point(x_point, y_point)
-                if index_cv is not None:
-                    self._drag_point = (index_cv, (0, 0))
-                    self._selected_point = (index_cv)
+                self._drag_point = (index_cv, (drag_x_offset, drag_y_offset))
+                self._selected_point = (index_cv)
+            else:
+                if self._drag_point is None:
+                    x_point, y_point = self.convert_pixel_coordinate_value_to_curve_value(mouse_x, mouse_y)
+                    index_cv = self.curve.add_control_point(x_point, y_point)
+                    if index_cv is not None:
+                        self._drag_point = (index_cv, (0, 0))
+                        self._selected_point = (index_cv)
 
-        self.update()
+            self.update()
 
     def mouseReleaseEvent(self, QMouseEvent):
         """ Internal mouse-release handler """

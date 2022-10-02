@@ -88,9 +88,9 @@ class MainWindow(QMainWindow):
             5,
             3,
             16
-
         )
         lut = colour.LUT3D(colour.LUT3D.linear_table(size))
+        self.main_widget.widget_menu.curve_editor.reset()
         self.path_lut = None
         self.main_widget.window_3d.load_lut(lut)
 
@@ -103,6 +103,7 @@ class MainWindow(QMainWindow):
         if path_lut:
             self.path_lut = path_lut
             lut = colour.read_LUT(path_lut)
+            self.main_widget.widget_menu.curve_editor.reset()
             self.main_widget.window_3d.load_lut(lut)
 
     def save_lut(self):
@@ -156,9 +157,9 @@ class MainWindow(QMainWindow):
 
         )
         entity_lut = self.main_widget.window_3d.entity_lut
-        lut_old = entity_lut.lut
-        # lut_new = entity_lut.lut.convert(type(entity_lut.lut), size=size)
-        # domain = entity_lut.lut.domain
+
+        # only resample transforamtion state, as base transformation is kept in gui
+        lut_old = entity_lut.lut_before_base_transformation
 
         table_lut_new = lut_old.apply(
             colour.LUT3D(colour.LUT3D.linear_table(size, domain=lut_old.domain)).table

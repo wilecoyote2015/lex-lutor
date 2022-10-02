@@ -23,32 +23,14 @@ from lex_lutor.main_widget import MainWidget, MainWindow
 
 
 # TODO: undo / redo!
-
-
-
-
-
 if __name__ == '__main__':
     app = QApplication(sys.argv)
 
     w = MainWindow()
 
-    # lut = colour.io.read_LUT('/home/bjoern/Pictures/hald-clut/HaldCLUT/own/provia_profiled_xt3.cube')
-    # lut = colour.io.read_LUT('/home/bjoern/Pictures/hald-clut/HaldCLUT/own/provia_profiled_xt3.cube')
-
-    # path_image = '/home/bjoern/PycharmProjects/darktabe_hald_generator/samples/provia/DSCF0326.JPG'
-
     lut = colour.LUT3D(colour.LUT3D.linear_table(9))
     w.main_widget.window_3d.load_lut(lut)
-    # w.main_widget.window_3d.entity_lut.color_space = colour.models.RGB_COLOURSPACE_ADOBE_RGB1998
-    # w.main_widget.widget_menu.load_image(path_image)
-
-
     w.show()
-
-
-
-
 
     # view.resize(1200, 800)
     sys.exit(app.exec())

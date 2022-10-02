@@ -104,17 +104,8 @@ class CubeView(Qt3DExtras.Qt3DWindow):
             self.delete_children(self.entity_lut)
             self.entity_lut.deleteLater()
 
-            # del self.entity_lut
-
         self.entity_lut = Lut3dEntity(lut, self)
-        # TODO: remove old lut
         self.root_entity.addComponent(self.entity_lut)
-
-        self.entity_lut.lut_changed.connect(self.gui_parent.widget_menu.start_update_image)
-
-    #
-    # def mousePressEvent(self, event: Qt3DInput.QMouseEvent) -> None:
-    #     print(event.button())
 
     @QtCore.Slot()
     def end_transform(self):

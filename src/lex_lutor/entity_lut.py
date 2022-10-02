@@ -297,6 +297,8 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
         self.load_lut(lut)
 
+        self.lut_changed.connect(self.parent_gui.gui_parent.widget_menu.start_update_image)
+
         self.start_preview_weights.connect(self.parent_gui.gui_parent.widget_menu.start_update_image)
         self.stop_preview_weights.connect(self.parent_gui.gui_parent.widget_menu.start_update_image)
 
@@ -360,7 +362,11 @@ class Lut3dEntity(Qt3DCore.QComponent):
 
         self.parent_gui.gui_parent.widget_menu.curve_editor.curve_updated.connect(self.update_transform_curve_change)
 
-        self.lut_changed.emit(self.lut)
+        # re-render with curve applied in case the current curve is altered when loading lut
+        #   after resampling
+        self.update_transform_curve_change(parent_gui.gui_parent.widget_menu.curve_editor.curve)
+
+        # self.lut_changed.emit(self.lut)
 
         # self.time_last_change = datetime.now()
         # self.timedelta_update = timedelta(milliseconds=100)
@@ -426,6 +432,21 @@ class Lut3dEntity(Qt3DCore.QComponent):
                 result_.append(node)
 
         return self.iter_nodes(fn)
+
+    @property
+    def lut_before_base_transformation(self):
+        table = self.lut.table.copy()
+
+        def fn(node: NodeLut, result_):
+            table[
+                node.indices_lut[0],
+                node.indices_lut[1],
+                node.indices_lut[2]
+            ] = node.coordinates_without_base_adjustment.toTuple()
+
+        self.iter_nodes(fn)
+
+        return colour.LUT3D(table=table, domain=self.lut.domain, size=self.lut.size)
 
     def find_nearest_nodes_pixels(self, coordinates_pixels: np.ndarray):
         coordinate_axes_source = np.stack(self.coordinates_lut_source, axis=-1)
