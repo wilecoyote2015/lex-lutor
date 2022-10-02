@@ -1,9 +1,10 @@
 # lex-lutor
 WIP application for 3D Lookup Table Manipulation.
 This is a technical prototype with fixed layout and no undo.
-The code is a mess (and so the commit log), as, currently, this project is just for curiosity. If it is useful and I have time and motivation, it will be rewritten from scratch with a (hopefully) better architecture. However, contributions are always welcome ;)
+The code is a mess (and so the commit log), as, currently, this project is just for curiosity. If it is useful and I have time and motivation, it will be rewritten from scratch with a (hopefully) better architecture and proper packaging. However, contributions are always welcome ;)
 
 # Usage
+Start main.py
 For now, usage is heavily shortcut based.
 First, load an image and an LUT or create a new LUT. **Large LUT will lead to slow performance! For now, try size 9 to 11**
 
