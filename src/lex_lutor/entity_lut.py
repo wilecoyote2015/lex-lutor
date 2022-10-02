@@ -872,22 +872,6 @@ class Lut3dEntity(Qt3DCore.QComponent):
     def update_transform_curve_change(self, curve):
         # Change the base shift according to curve
         def fn(node, result_):
-            # lightness_coords_node = self.transform_color_space(
-            #     self.color_space,
-            #     HSL,
-            #     np.asarray(node.coordinates_source.toTuple())[np.newaxis, ...]
-            # )[0, 2]
-            # adjustment_prev = node.base_adjustment_lightness
-            # node.base_adjustment_lightness = curve.get_y(lightness_coords_node) - lightness_coords_node
-
-            # value_coords_node = self.transform_color_space(
-            #     self.color_space,
-            #     HSV,
-            #     np.asarray(node.coordinates_source.toTuple())[np.newaxis, ...]
-            # )[0, 2]
-            # adjustment_prev = node.base_adjustment_value
-            # node.base_adjustment_value = curve.get_y(value_coords_node) - value_coords_node
-
             r, g, b = node.coordinates_source.toTuple()
             node.base_adjustment_r = curve.get_y(r) - r
             node.base_adjustment_g = curve.get_y(g) - g

@@ -21,6 +21,16 @@ from lex_lutor.dialogs import get_color_space
 # TODO: support linear color spaces.
 #   Seems color spaces must be implemented manually with according cctf
 
+# TODO: use undo / redo stack for node transform and base curve adjustments:
+#   subclass QUndoCommand. On instantiation, pass old and new coordinates and indices nodes and coordinates without base adjustment.
+#   in undo and redo, entity_lut.apply_calculated_transorm_to_nodes_dragging_change()
+#   is called.
+#   the QUndoCommand is then used instead of apply_calculated_transorm_to_nodes_dragging_change
+#   by queue_updates_transform. As the queue is used for both, update_transform_curve_change() and
+#   update_transform_mouse_drag, this generalizes.
+#   HOWEVER, if action was curve change, the curve change must also be reset in the curve GUI.
+#   is this a use case for nested QUndoCommands, where, on curve change, a parent QUndoCommand is fired
+#   containing the QUndoCommands for transform and curve change?
 
 class MainWindow(QMainWindow):
     def __init__(self):
